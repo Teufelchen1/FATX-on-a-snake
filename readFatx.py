@@ -2,6 +2,7 @@
 import struct
 import os
 import argparse
+import json
 from cmd import Cmd
 
 SUPERBLOCK_SIZE = 4096
@@ -19,7 +20,6 @@ class SuperBlock():
 	14		4		Unknown (always 0?)
 	18		4078	Unused
 	"""
-
 	SUPERBLOCK_SIZE = 4096
 	SECTOR_SIZE = 512
 	SB_OFS_Name = 0
@@ -34,6 +34,7 @@ class SuperBlock():
 	SB_SIZE_Unkown = 4
 	SB_OFS_Unused = 18
 	SB_SIZE_Unused = 4078
+
 	def __init__(self, sb):
 		if(SUPERBLOCK_SIZE != len(sb)):
 			print('SuperBlock is not '+ str(SUPERBLOCK_SIZE) +' bytes long')
@@ -112,22 +113,14 @@ class DirectoryEntry():
 	D_SIZE_FILESIZE = 4
 
 	"""Attributes, byte values/mask
-	0x01
-	Indicates that the file is read only.
-	0x02
-	Indicates a hidden file. Such files can be displayed if it is really required.
-	0x04
-	Indicates a system file. These are hidden as well.
-	0x08
-	Indicates a special entry containing the disk's volume label, instead of describing a file. This kind of entry appears only in the root directory.
-	0x10
-	The entry describes a subdirectory.
-	0x20
-	This is the archive flag. This can be set and cleared by the programmer or user, but is always set when the file is modified. It is used by backup programs.
-	0x40
-	Not used; must be set to 0.
-	0x80
-	Not used; must be set to 0.
+	0x01 - Indicates that the file is read only.
+	0x02 - Indicates a hidden file. Such files can be displayed if it is really required.
+	0x04 - Indicates a system file. These are hidden as well.
+	0x08 - Indicates a special entry containing the disk's volume label, instead of describing a file. This kind of entry appears only in the root directory.
+	0x10 - The entry describes a subdirectory.
+	0x20 - This is the archive flag. This can be set and cleared by the programmer or user, but is always set when the file is modified. It is used by backup programs.
+	0x40 - Not used; must be set to 0.
+	0x80 - Not used; must be set to 0.
 	"""
 	ATR_READONLY = 0x01
 	ATR_HIDDEN = 0x02
@@ -219,7 +212,7 @@ class Filesystem():
 
 	def chdir(self, path):
 		# this function should yield either a list of all files & directorys in the specified `path`
-		# or just return the DirectoryEntry of the file, if the `path` points to a file
+		# or None, if the `path` points to a file, is not found or an error occoured
 		segs = path.split('/')
 		segs = [seg for seg in segs if seg] # remove empty strings
 		cwd = self.rootdir
@@ -234,7 +227,7 @@ class Filesystem():
 			if not d.atr.DIRECTORY: 
 				# undesired behavior: cd /folderA/file.txt/folderB/ would return node of file.txt
 				# return the file as DirectoryEntry without an error
-				return d, None
+				return None, path+" is a file"
 
 			# check if the corresponding cluster has a target, 
 			# therefore is not the last element of the linked list -> The file spans more then one chunk 
@@ -246,16 +239,28 @@ class Filesystem():
 			# go to folder ... 
 		return cwd, None
 
-	def download(self, path):
-		# this function should return a byte array of the content of the file specified by path
-		file, reason = self.chdir(path)
-		if reason:
-			return reason
+	def getFileEntry(self, path):
+		# this function returns the DirectoryEntry of a file
+		path, filename = path.rsplit('/', 1)
+		cwd, err = self.chdir(path)
+		if err:
+			print(err)
+			return None
+		if filename not in cwd.keys():
+			print("File not found")
+			return None
+		file = cwd[filename]
+		return file
+
+	def getFileContent(self, file):
+		# this function should return a byte array of the content of the file
+		if file.atr.DIRECTORY:
+			print(file.filename+" is a directory")
+			return None
 		offset = self.calcClusterOffset(file.cluster)
 		self.f.seek(offset)
 		print(hex(offset))
 		return self.f.read(file.size)
-
 
 	def __str__(self):
 		return self.sb.name
@@ -273,6 +278,10 @@ class CLI(Cmd):
 		self.path = "/"
 		self.do_info()
 
+	def autocomplete(self, text):
+		names = [i.filename for i in self.wd]
+		return [i for i in names if i.startswith(text)]
+
 	def do_info(self, args=None):
 		"""Print information about the current FATX filesystem"""
 		print("Name: " + self.fs.sb.name)
@@ -289,14 +298,15 @@ class CLI(Cmd):
 		out = ""
 		if "-l" in args or "--list" in args:
 			for item in self.wd:
+				if item.atr.DIRECTORY:
+					out += 'd'
+				else:
+					out += '-'
 				if item.atr.READONLY:
 					out += 'r- '
 				else:
 					out += 'rw '
-				if item.atr.DIRECTORY:
-					out += 'd '
-				else:
-					out += 'f '
+				out += str(item.size).rjust(7)
 				out += ' '+item.filename+"\n"
 		else:
 			for item in self.wd:
@@ -308,8 +318,13 @@ class CLI(Cmd):
 		"""print working directory"""
 		print(self.path)
 
-	def do_cd(self,args):
+	def complete_cd(self, text, line, begidx, endidx):
+		return self.autocomplete(text)
+
+	def do_cd(self, args):
 		"""change directory"""
+		if args == '':
+			args = '/'
 		if args == ".":
 			pass
 		elif args == "..":
@@ -321,7 +336,7 @@ class CLI(Cmd):
 			if err:
 				print(err)
 				self.path = '/'
-				self.prompt = self.path+' >'
+				self.prompt = self.path+' > '
 				return
 			self.wd = chdir.values()
 		else:
@@ -335,13 +350,46 @@ class CLI(Cmd):
 			else:
 				self.path = args
 				self.wd = chdir.values()
-		self.prompt = self.path+' >'
+		self.prompt = self.path+' > '
+
+	def do_tree(self, args):
+		'tree [depth=10]'
+		max_depth = 10
+		if args:
+			try:
+				max_depth = int(args[0])
+			except:
+				print("Can not convert %s into int", args)
+				return
+
+		def tree(path, max_depth=10):
+			out = {}
+			chdir, err = self.fs.chdir(path)
+			if err:
+				print(err)
+				return {}
+			for d in chdir.values():
+				if d.atr.DIRECTORY:
+					if max_depth != 0:
+						out[d.filename] = tree(path+'/'+d.filename, max_depth - 1)
+					else:
+						out[d.filename] = '{}'
+				else:
+					out[d.filename] = d.filename
+			return out
+		print(json.dumps(tree(self.path, max_depth), sort_keys=True, indent=2))
+
+	def complete_cat(self, text, line, begidx, endidx):
+		return self.autocomplete(text)
 
 	def do_cat(self, args):
 		"""Print content of a file"""
 		if '/' != args[0]:
 			args = self.path+args
-		print(self.fs.download(args))
+		print(self.fs.getFileContent(self.fs.getFileEntry(args)))
+
+	def complete_export(self, text, line, begidx, endidx):
+		return self.autocomplete(text)
 
 	def do_export(self, args):
 		"""Exports <source> from the FATX to <destination> on you host"""
@@ -352,7 +400,7 @@ class CLI(Cmd):
 		f = open(args[1],'wb')
 		if '/' != args[0][0]:
 			args[0] = self.path+args[0]
-		f.write(self.fs.download(args[0]))
+		f.write(self.fs.getFileContent(self.fs.getFileEntry(args[0])))
 		print(str(f.tell()) + "bytes written.")
 		f.close()
 
