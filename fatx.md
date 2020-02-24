@@ -61,7 +61,7 @@ Size and Offset in Bytes
 | 0x003C |2     | Time? |
 | 0x003E |2     | Date? |
 
-Deleted directorys and files have set their name-length attribute set to 0xE5.
+Deleted directorys and files have set their name-length attribute set to 0xE5. The last entry is either complete 0x00 or 0xFF.
 
 The flags are the same as on regular FAT16/32:
 | Bit		| Flag | Description |
