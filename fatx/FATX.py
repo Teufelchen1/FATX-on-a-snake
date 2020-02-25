@@ -24,8 +24,12 @@ class Filesystem():
 		self.fat = FAT(self.f.read(int(fat_size)), self.size)
 
 		# Read the first Cluster, it should contain the root DirectoryEntry list
-		cluster0 = self.readClusterID(0)
-		self.root = self.readDirectoryEntryList(cluster0)
+		cluster1 = self.readClusterID(1)
+		self.root = self.readDirectoryEntryList(cluster1)
+
+	def status(self):
+		print("Type: FATX{0}".format(8*self.size))
+		print("Number of clusters in map: {0}".format(self.fat.numberClusters()))
 
 	def readClusterID(self, ID):
 		return self.readCluster(self.getClusterOffset(ID))
@@ -37,7 +41,7 @@ class Filesystem():
 	# Calculates the offset for a given clusterID
 	def getClusterOffset(self, clusterID):
 		#(Number of your cluster -1) * cluster size + Superblock + FAT
-		return int(clusterID * self.sb.clusterSize() + SUPERBLOCK_SIZE + self.fat_size)
+		return int((clusterID-1) * self.sb.clusterSize() + SUPERBLOCK_SIZE + self.fat_size)
 
 	# Reads and Parses a Cluster as a DirectoryEntry list
 	def readDirectoryEntryList(self, cluster):
@@ -59,4 +63,19 @@ class Filesystem():
 				raise SystemError
 		return l
 
+	def readDirectory(self, directoryentry):
+		if not directoryentry.atr.DIRECTORY:
+			raise ValueError("This is not a directory, it is a file")
+		# this cluster should contain a DirectoryEntryList
+		cluster = self.readClusterID(directoryentry.cluster)
+		return self.readDirectoryEntryList(cluster)
 
+	# Reads a File and returns it
+	def readFile(self, directoryentry):
+		data = bytearray()
+		if directoryentry.atr.DIRECTORY:
+			raise ValueError("This is a directory, not a file")
+		clusters = self.fat.clusterChain(directoryentry.cluster)
+		for i in clusters:
+			data += self.readClusterID(i)
+		return data[:directoryentry.size]
