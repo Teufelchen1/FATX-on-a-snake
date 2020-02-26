@@ -1,7 +1,7 @@
 import json, sys
 from fatx import FATX
 
-def DirToDic(item):
+def DirToDic(item, atr=False):
 		s = {}
 		a = {}
 		s['NAME'] = item.filename
@@ -14,16 +14,19 @@ def DirToDic(item):
 		a['DELETED'] = item.atr.DELETED
 		s['CLUSTER'] = item.cluster
 		s['SIZE'] = item.size
-		s['ATR'] = a
+		s['ORIGIN'] = item.origin
+		if atr:
+			s['ATR'] = a
 		return s
 
-def tree(fs, root):
+def tree(fs, root, max_depth=10):
 	out = {}
 	for item in root.values():
 		if not item.atr.DELETED:
 			out[item.filename] = DirToDic(item)
 			if item.atr.DIRECTORY:
-				out[item.filename]['SUBDIR'] = tree(fs, fs.readDirectory(item))
+				if max_depth > 0:
+					out[item.filename]['SUBDIR'] = tree(fs, fs.readDirectory(item), max_depth-1)
 	return out
 
 def exportFile(fs, file):
@@ -35,7 +38,13 @@ if __name__ == "__main__":
 	fs = FATX.Filesystem(sys.argv[1])
 	fs.status()
 	#print(fs.root)
-	print(DirToDic(fs.root['Autobahn.mp4']))
-	exportFile(fs, fs.root['Autobahn.mp4'])
+	obj = fs.root['Autobahn.mp4']
+	#fs.writeDirectoryEntry(obj)
+	print(json.dumps(DirToDic(obj, True), sort_keys=True, indent=2))
+	fs.delete(obj)
+	fs.rename(obj, "Strasse.mp4")
+	print(json.dumps(DirToDic(obj, True), sort_keys=True, indent=2))
+	#exportFile(fs, fs.root['Autobahn.mp4'])
 	#print(fs.readFile(fs.root['curWeather.xml']))
-	#print(json.dumps(tree(fs, fs.root), sort_keys=True, indent=2))
+	#print(json.dumps(tree(fs, fs.root, 0), sort_keys=True, indent=2))
+

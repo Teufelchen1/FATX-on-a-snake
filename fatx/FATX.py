@@ -9,7 +9,7 @@ class Filesystem():
 
 	def __init__(self, file):
 		self.partition_size = os.stat(file).st_size
-		self.f = open(file, 'rb')
+		self.f = open(file, 'r+b')
 		self.sb = SuperBlock(self.f.read(SUPERBLOCK_SIZE))
 
 		# ((partition size in bytes / cluster size) * cluster map entry size)
@@ -25,11 +25,13 @@ class Filesystem():
 
 		# Read the first Cluster, it should contain the root DirectoryEntry list
 		cluster1 = self.readClusterID(1)
-		self.root = self.readDirectoryEntryList(cluster1)
+		self.root = self.readDirectoryEntryList(cluster1, 1)
+
+	def __str__(self):
+		return "Type: FATX{0}\nNumber of clusters in map: {1}".format(8*self.size, self.fat.numberClusters())
 
 	def status(self):
-		print("Type: FATX{0}".format(8*self.size))
-		print("Number of clusters in map: {0}".format(self.fat.numberClusters()))
+		print(self.__str__())
 
 	def readClusterID(self, ID):
 		return self.readCluster(self.getClusterOffset(ID))
@@ -44,12 +46,12 @@ class Filesystem():
 		return int((clusterID-1) * self.sb.clusterSize() + SUPERBLOCK_SIZE + self.fat_size)
 
 	# Reads and Parses a Cluster as a DirectoryEntry list
-	def readDirectoryEntryList(self, cluster):
+	def readDirectoryEntryList(self, cluster, clusterID):
 		l = {}
 		numentrys = 0
 		while numentrys < 256:
 			try:
-				de = DirectoryEntry(cluster[numentrys*DIRECTORY_SIZE:][:DIRECTORY_SIZE])
+				de = DirectoryEntry(cluster[numentrys*DIRECTORY_SIZE:][:DIRECTORY_SIZE], (clusterID, numentrys))
 				l[de.filename] = de
 				numentrys += 1
 			except StopIteration:
@@ -57,18 +59,19 @@ class Filesystem():
 				# end of list
 			except ValueError:
 				# I messed up
-				pass
+				raise ValueError
 			except SystemError:
 				# The filesystem messed up
 				raise SystemError
 		return l
 
-	def readDirectory(self, directoryentry):
+	# Opens a directory and returns a DirectoryEntry list of the contents
+	def openDirectory(self, directoryentry):
 		if not directoryentry.atr.DIRECTORY:
 			raise ValueError("This is not a directory, it is a file")
 		# this cluster should contain a DirectoryEntryList
 		cluster = self.readClusterID(directoryentry.cluster)
-		return self.readDirectoryEntryList(cluster)
+		return self.readDirectoryEntryList(cluster, directoryentry.cluster)
 
 	# Reads a File and returns it
 	def readFile(self, directoryentry):
@@ -79,3 +82,23 @@ class Filesystem():
 		for i in clusters:
 			data += self.readClusterID(i)
 		return data[:directoryentry.size]
+
+	# Re-Writes a directoryentry i.e. after some attributes changed
+	def writeDirectoryEntry(self, directoryentry):
+		clusterID, numentry = directoryentry.origin
+		offset = self.getClusterOffset(clusterID)
+		offset += DIRECTORY_SIZE*numentry
+		self.f.seek(offset)
+		if DIRECTORY_SIZE != self.f.write(directoryentry.pack()):
+			raise SystemError("Unsuccessfull write, your FS is broken now :( sorry!")
+
+	def delete(self, directoryentry):
+		directoryentry.atr.DELETED = True
+		self.writeDirectoryEntry(directoryentry)
+
+	def rename(self, directoryentry, name):
+		try:
+			directoryentry.rename(name)
+		except ValueError as e:
+			raise e
+		self.writeDirectoryEntry(directoryentry)

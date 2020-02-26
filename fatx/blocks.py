@@ -178,9 +178,21 @@ class DirectoryEntry():
 		ARCHIVE = False
 		DELETED = False
 
-
-	def __init__(self, d):
+	def __init__(self, d, origin):
+		# Size of the name
+		self.namesize = 0
+		# The name(all 42 bytes)
+		self.name = 0
+		# the cluster number where the file/directory is saved 
+		self.cluster = 1
+		# size of file
+		self.size = 0
+		# The name in ascii (less or equal to 42 bytes)
+		self.filename = ""
+		# tuple, cluster where this DirectoryEntry was read from and the number of occurence
+		self.origin = origin
 		self.atr = self.Attributes()
+
 		if(DIRECTORY_SIZE != len(d)):
 			print('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
 			raise ValueError('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
@@ -191,6 +203,7 @@ class DirectoryEntry():
 		if 0xFF == self.namesize or 0x00 == self.namesize:
 			raise StopIteration("Reached end of DirectoryEntry list")
 
+		# This file is deleted(but we will try to recover the name a bit)
 		if 0xE5 == self.namesize:
 			self.atr.DELETED = True
 			self.namesize = 42
@@ -200,11 +213,9 @@ class DirectoryEntry():
 			raise SystemError("Namesize is longer("+hex(self.namesize)+")then max length("+hex(42)+")")
 
 		self.attributes = raw[1]
-
 		self.name = raw[2]
 		self.cluster = raw[3] # first cluster of the file
 		self.size = raw[4]
-
 		self.atr.READONLY = bool(self.attributes & self.ATR_READONLY)
 		self.atr.HIDDEN = bool(self.attributes & self.ATR_HIDDEN)
 		self.atr.SYSTEM = bool(self.attributes & self.ATR_SYSTEM)
@@ -212,6 +223,33 @@ class DirectoryEntry():
 		self.atr.DIRECTORY = bool(self.attributes & self.ATR_DIRECTORY)
 		self.atr.ARCHIVE = bool(self.attributes & self.ATR_ARCHIVE)
 		self.filename = "".join([chr(i) for i in self.name[:self.namesize] if i > 0x1F and i < 0x7F])
+
+	def rename(self, name):
+		if len(name) > 42:
+			raise ValueError('Name is to long (max 42 character)')
+		self.name = bytearray(name, 'ascii')+((42-len(name))*b'\xFF')
+		self.filename = name
+
+	def pack(self):
+		def set_bit(boolvalue, bit):
+			if boolvalue:
+				return bit
+			return 0
+		self.attributes = 0
+		self.attributes |= set_bit(self.atr.READONLY, self.ATR_READONLY)
+		self.attributes |= set_bit(self.atr.HIDDEN, self.ATR_HIDDEN)
+		self.attributes |= set_bit(self.atr.SYSTEM, self.ATR_SYSTEM)
+		self.attributes |= set_bit(self.atr.VOLUMELABEL, self.ATR_VOLUMELABEL)
+		self.attributes |= set_bit(self.atr.DIRECTORY, self.ATR_DIRECTORY)
+		self.attributes |= set_bit(self.atr.ARCHIVE, self.ATR_ARCHIVE)
+		if self.atr.DELETED:
+			self.namesize = 0xE5
+		raw = struct.pack('BB42sII12x', self.namesize,
+										self.attributes,
+										self.name,
+										self.cluster,
+										self.size)
+		return raw
 
 	def __str__(self):
 		return self.filename
