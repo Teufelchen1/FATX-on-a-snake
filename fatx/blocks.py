@@ -66,9 +66,10 @@ class FAT():
 	|0xfff8 - 0xffff| Marks the end of a cluster chain 
 	"""
 
-	def __init__(self, raw_clustermap, clustersize):
+	def __init__(self, raw_clustermap, clusterentrysize):
 		self.f = raw_clustermap
-		self.size = clustersize
+		self.size = clusterentrysize # number of bytes per cluster entry
+									 # usually 2(FATX16) or 4(FATX32) bytes
 		self.clustermap = []
 
 		# slice up the fat table
@@ -97,6 +98,36 @@ class FAT():
 				return EntryType.FATX_CLUSTER_END
 		return EntryType.FATX_CLUSTER_DATA
 
+	# set an entry in the FAT to either a special type or pointer
+	def setEntryType(self, pos, entrytype):
+		if self.size == 2:
+			if entrytype == EntryType.FATX_CLUSTER_AVAILABLE:
+				t = 0x0000
+			elif entrytype == EntryType.FATX_CLUSTER_RESERVED:
+				t = 0x0001
+			elif entrytype == EntryType.FATX_CLUSTER_BAD:
+				t = 0xFFF7
+			elif entrytype == EntryType.FATX_CLUSTER_END:
+				t = 0xFFFF
+			else:
+				# Just to be sure nobody is being stupid
+				assert(self.getEntryType(self.clustermap[pos]) == EntryType.FATX_CLUSTER_AVAILABLE)
+				t = entrytype
+		if self.size == 4:
+			if entrytype == EntryType.FATX_CLUSTER_AVAILABLE:
+				t = 0x00000000
+			elif entrytype == EntryType.FATX_CLUSTER_RESERVED:
+				t = 0x00000001
+			elif entrytype == EntryType.FATX_CLUSTER_BAD:
+				t = 0xFFFFFFF7
+			elif entrytype == EntryType.FATX_CLUSTER_END:
+				t = 0xFFFFFFFF
+			else:
+				# Just to be sure nobody is being stupid
+				assert(self.getEntryType(self.clustermap[pos]) == EntryType.FATX_CLUSTER_AVAILABLE)
+				t = entrytype
+		self.clustermap[pos] = t
+
 	# collects the IDs/No. of clusters of a chain of a given start cluster 
 	def clusterChain(self, pointer):
 		l = []
@@ -118,6 +149,28 @@ class FAT():
 			if nvalue in [EntryType.FATX_CLUSTER_BAD, EntryType.FATX_CLUSTER_RESERVED, EntryType.FATX_CLUSTER_AVAILABLE]:
 				raise ValueError("One chain element is invalid", nvalue)
 		return l
+
+	# collects a list of IDs/No. of clusters that a free and provide enough storagespace for `size`
+	def getFreeClusterChain(self, nclusters):
+		# l shall store the list of free clusters
+		l = []
+		pos = 1
+		for i in range(nclusters):
+			# Dirty, FIXME!				   MagicValue :(
+			l.append(self.clustermap.index(0x0000, pos))
+			pos = l[-1]+1
+		return l
+
+	# links a number of clusters together and terminates the list
+	def linkClusterChain(self, clusterchain):
+		index = clusterchain.pop(0)
+		while len(clusterchain) > 0:
+			pointer = clusterchain.pop(0)
+			self.setEntryType(index, pointer)
+			index = pointer
+		self.setEntryType(index, EntryType.FATX_CLUSTER_END)
+
+
 
 	def __str__(self):
 		return str(self.numberClusters()) + ' Clusters in map'
@@ -251,5 +304,42 @@ class DirectoryEntry():
 										self.size)
 		return raw
 
+	@classmethod
+	def new(cls, size, name):
+		self = cls.__new__(cls)
+		try:
+			self.rename(name)
+		except ValueError as e:
+			raise e
+		self.size = struct.pack("I", size)
+		return self
+
 	def __str__(self):
 		return self.filename
+
+
+class DirectoryEntryList():
+	# Cluster is the raw binary block containing DirectoryEntrys
+	def __init__(self, cluster, clusterID):
+		self.clusterID = clusterID
+		self.l = []
+		numentrys = 0
+		while numentrys < 256:
+			try:
+				de = DirectoryEntry(cluster[numentrys*DIRECTORY_SIZE:][:DIRECTORY_SIZE], self)
+				self.l.append(de)
+				numentrys += 1
+			except StopIteration:
+				break
+				# end of list
+			except ValueError:
+				# I messed up
+				raise ValueError
+			except SystemError:
+				# The filesystem messed up
+				raise SystemError
+
+	def list(self):
+		return self.l
+
+	
