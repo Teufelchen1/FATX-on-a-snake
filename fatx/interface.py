@@ -51,7 +51,7 @@ class FatxObject():
 		"""
 		renames this object and safes the change to disk
 		"""
-		raise NotImplementedError("Override this in the subclass")
+		self.filesystem.rename(self._de, name)
 
 	def exportFile(self):
 		"""
@@ -154,6 +154,9 @@ class RootObject(DirectoryObject):
 		self._dl = directorylist
 		self._elements = []
 		self.createFatxObjectList()
+
+	def rename(self, name):
+		raise TypeError("You can't rename the filesystem root")
 
 	def __str__(self):
 		return "Root of the filesystem"

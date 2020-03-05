@@ -2,9 +2,21 @@ import os, math
 from .blocks import SuperBlock, FAT, DirectoryEntry, DirectoryEntryList
 from .interface import *
 
+READ_ONLY = True
+
 SUPERBLOCK_SIZE = 4096
 SECTOR_SIZE = 512
 DIRECTORY_SIZE = 64
+
+def writingWarning(func):
+	def call(*args, **kwargs):
+		print("Warning! writing changes to the disk!")
+		if not READ_ONLY:
+			func(*args, **kwargs)
+		else:
+			raise SystemError("User abort, change READ_ONLY to False")
+
+	return call
 
 class Filesystem():
 
@@ -94,8 +106,11 @@ class Filesystem():
 		return data[:directoryentry.size]
 
 	# Re-Writes a directoryentry i.e. after some attributes changed
+	@writingWarning
 	def writeDirectoryEntry(self, directoryentry):
-		clusterID, numentry = directoryentry.origin
+		delist = directoryentry.origin
+		clusterID = delist.clusterID
+		numentry = delist.list().index(directoryentry)
 		offset = self.getClusterOffset(clusterID)
 		offset += DIRECTORY_SIZE*numentry
 		self.f.seek(offset)
