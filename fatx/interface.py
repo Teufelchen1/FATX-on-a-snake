@@ -7,9 +7,17 @@ class FatxObject():
 	def registerFilesystem(cls, fs):
 		cls.filesystem = fs
 
+	@staticmethod
+	def splitPath(path):
+		segments = path.split('/')
+		while '' in segments:
+			segments.remove('')
+		return segments
+
 	# Note: static typing with selfreference(for parent) is possible but ugly :(
 	def __init__(self, directoryentry: DirectoryEntry, parent): 
 		self._de = directoryentry
+		self._name = self._de.filename
 		self.attributes = self._de.atr
 		self._parent = parent
 
@@ -71,10 +79,25 @@ class FatxObject():
 
 
 class FileObject(FatxObject):
-	pass
+
+	def ls(self, deleted=False):
+		raise TypeError("This is a file, not a directory")
+
+	def get(self, path):
+		# since every FatxObject has the scope "/" as root(itself), asking for "/" should yield yourself
+		segments = self.splitPath(path)
+		if len(segments) == 0:
+			return self
+		raise TypeError("This is a file, not a directory(Note: use .exportFile() to extract my contents!")
+
+	def exportFile(self):
+		return self.filesystem.readFile(self._de)
 
 
 class DirectoryObject(FatxObject):
+	"""
+	 This class represents directorys of the filesystem. 
+	"""
 	def __init__(self, directoryentry: DirectoryEntry, parent: FatxObject): # directorylist: DirectoryEntryList):
 		super().__init__(directoryentry, parent)
 
@@ -93,11 +116,39 @@ class DirectoryObject(FatxObject):
 			else:
 				self._elements.append(FileObject(i, self))
 
-	def ls(self, deleted=False):
-		return [ i for i in self._elements if (not i.attributes.DELETED or deleted)]
+	def ls(self, path="/", deleted=False):
+		obj = self.get(path)
+		if isinstance(obj, DirectoryObject):
+			return [ i for i in obj._elements if (not i.attributes.DELETED or deleted)]
+		else:
+			raise ValueError("Not a directory")
+
+	def get(self, path):
+		def filterByName(name):
+			for i in self._elements:
+				if i._name == name:
+					return i
+			raise IndexError()
+		segments = self.splitPath(path)
+		if len(segments) > 0:
+			subnames = [i._name for i in self._elements]
+			if segments[0] in subnames:
+				try:
+					return filterByName(segments[0]).get(path.replace(segments[0], '', 1))
+				except ValueError as e:
+					raise e
+			else:
+				raise ValueError("Path not found")
+		else:
+			return self
 
 
 class RootObject(DirectoryObject):
+	"""
+	 This class should only be instantiated once, as it is the root of the entire filesystem
+	 Only the init behaves diffrent compared to a regular DirectoryObject, as the root does
+	 not have its own DirectoryEntry
+	"""
 	def __init__(self, directorylist: DirectoryEntryList):
 		self._parent = self
 		self._dl = directorylist
