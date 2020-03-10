@@ -1,11 +1,28 @@
+import os
 from .blocks import DirectoryEntry, DirectoryEntryList
 
+"""
+This file contains four classes which are used as the main interface for 
+the user of FATX-on-a-snake. 
+Actually, I lied, you are only supposed to interact with three
+of them, since FatxObject is the common baseclass from wich the others
+extend. My reasoning behind this is, that in FATX you only interact with
+"DirectoryEntrys" which are always the same, no matter if they are a file
+or a directory. So it makes sense to me that they should share a similar
+interface which subclasses extend to implement specific behavior. 
+The functions of the classes are described in the README, how ever since 
+you are already here, take a look at FatxObject and read the comments on 
+the methodes. :)
+
+"""
+
+
 class FatxObject():
-	filesystem = None
+	_filesystem = None
 
 	@classmethod
 	def registerFilesystem(cls, fs):
-		cls.filesystem = fs
+		cls._filesystem = fs
 
 	@staticmethod
 	def splitPath(path):
@@ -32,7 +49,7 @@ class FatxObject():
 		"""
 		Prints its own attributes
 		"""
-		raise NotImplementedError("Override this in the subclass")
+		return self._de.atr.__dict__
 
 	def parent(self):
 		"""
@@ -51,7 +68,7 @@ class FatxObject():
 		"""
 		renames this object and safes the change to disk
 		"""
-		self.filesystem.rename(self._de, name)
+		self._filesystem.rename(self._de, name)
 
 	def exportFile(self):
 		"""
@@ -81,6 +98,8 @@ class FatxObject():
 class FileObject(FatxObject):
 
 	def ls(self, deleted=False):
+		import pdb
+		pdb.Pdb().set_trace()
 		raise TypeError("This is a file, not a directory")
 
 	def get(self, path):
@@ -91,7 +110,7 @@ class FileObject(FatxObject):
 		raise TypeError("This is a file, not a directory(Note: use .exportFile() to extract my contents!")
 
 	def exportFile(self):
-		return self.filesystem.readFile(self._de)
+		return self._filesystem.readFile(self._de)
 
 
 class DirectoryObject(FatxObject):
@@ -103,7 +122,7 @@ class DirectoryObject(FatxObject):
 
 		# get a list of all files in the subdir, note: You'll get a DirectoryEntryList(DEL) in return
 		# This DEL enables you to append files and writing them to disk
-		self._dl = self.filesystem.openDirectory(directoryentry)
+		self._dl = self._filesystem.openDirectory(directoryentry)
 		
 		# Prepare a list of FatxObjects for easy access later on
 		self._elements = []
@@ -142,6 +161,24 @@ class DirectoryObject(FatxObject):
 		else:
 			return self
 
+	def importFile(self, path):
+		filename = os.path.basename(path)
+		if filename in [i._name for i in self._elements]:
+			raise SystemError("File already exists")
+		file = open(path, 'rb')
+		# create new directory entry for the new file
+		size = os.stat(filename).st_size
+		newDE = DirectoryEntry.new(size, filename)
+		# write file data to disk
+		clusterStartID = self._filesystem.writeFile(file, size)
+		newDE.cluster = clusterStartID
+		self._dl.append(newDE)
+		self._filesystem.writeDirectoryEntryList(self._dl)
+		
+		# update our entrys
+		self._elements = []
+		self.createFatxObjectList()
+
 
 class RootObject(DirectoryObject):
 	"""
@@ -154,6 +191,9 @@ class RootObject(DirectoryObject):
 		self._dl = directorylist
 		self._elements = []
 		self.createFatxObjectList()
+
+	def details(self):
+		raise TypeError("This is your root!")
 
 	def rename(self, name):
 		raise TypeError("You can't rename the filesystem root")

@@ -150,7 +150,7 @@ class FAT():
 				raise ValueError("One chain element is invalid", nvalue)
 		return l
 
-	# collects a list of IDs/No. of clusters that a free and provide enough storagespace for `size`
+	# collects a list of IDs/No. of clusters that are free
 	def getFreeClusterChain(self, nclusters):
 		# l shall store the list of free clusters
 		l = []
@@ -163,6 +163,8 @@ class FAT():
 
 	# links a number of clusters together and terminates the list
 	def linkClusterChain(self, clusterchain):
+		import pdb
+		pdb.Pdb().set_trace()
 		index = clusterchain.pop(0)
 		while len(clusterchain) > 0:
 			pointer = clusterchain.pop(0)
@@ -170,7 +172,14 @@ class FAT():
 			index = pointer
 		self.setEntryType(index, EntryType.FATX_CLUSTER_END)
 
-
+	def pack(self):
+		data = b''
+		for i in self.clustermap:
+			if clusterentrysize == 2:
+				data += struct.pack('H', i)
+			else:
+				data += struct.pack('I', i)
+		return data
 
 	def __str__(self):
 		return str(self.numberClusters()) + ' Clusters in map'
@@ -222,14 +231,17 @@ class DirectoryEntry():
 	ATR_DIRECTORY = 0x10
 	ATR_ARCHIVE = 0x20
 
+	# ToDo: Add pack method
 	class Attributes():
-		READONLY = False
-		HIDDEN = False
-		SYSTEM = False
-		VOLUMELABEL = False
-		DIRECTORY = False
-		ARCHIVE = False
-		DELETED = False
+		def __init__(self):
+			self.READONLY = False
+			self.HIDDEN = False
+			self.SYSTEM = False
+			self.VOLUMELABEL = False
+			self.DIRECTORY = False
+			self.ARCHIVE = False
+			self.DELETED = False
+
 
 	def __init__(self, d, origin):
 		# Size of the name
@@ -242,7 +254,7 @@ class DirectoryEntry():
 		self.size = 0
 		# The name in ascii (less or equal to 42 bytes)
 		self.filename = ""
-		# tuple, cluster where this DirectoryEntry was read from and the number of occurence
+		# DirectoryEntryList where this DirectoryEntry was read from
 		self.origin = origin
 		self.atr = self.Attributes()
 
@@ -282,6 +294,7 @@ class DirectoryEntry():
 			raise ValueError('Name is to long (max 42 character)')
 		self.name = bytearray(name, 'ascii')+((42-len(name))*b'\xFF')
 		self.filename = name
+		self.namesize = len(name)
 
 	def pack(self):
 		def set_bit(boolvalue, bit):
@@ -304,6 +317,7 @@ class DirectoryEntry():
 										self.size)
 		return raw
 
+	# ToDo: switch into to functions for either file or directory
 	@classmethod
 	def new(cls, size, name):
 		self = cls.__new__(cls)
@@ -311,7 +325,8 @@ class DirectoryEntry():
 			self.rename(name)
 		except ValueError as e:
 			raise e
-		self.size = struct.pack("I", size)
+		self.size = size
+		self.atr = self.Attributes()
 		return self
 
 	def __str__(self):
@@ -341,5 +356,15 @@ class DirectoryEntryList():
 
 	def list(self):
 		return self.l
+
+	def append(self, directoryentry):
+		self.l.append(directoryentry)
+
+	def pack(self):
+		data = b''
+		for i in self.l:
+			data += i.pack()
+		data += b'\xFF'*DIRECTORY_SIZE
+		return data
 
 	

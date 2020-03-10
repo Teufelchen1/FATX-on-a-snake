@@ -2,6 +2,14 @@ import os, math
 from .blocks import SuperBlock, FAT, DirectoryEntry, DirectoryEntryList
 from .interface import *
 
+"""
+This file mainly contains horrible code. Please don't look to much at it. 
+It links the high abstraction (public) API form interface.py with 
+the byte-representing objects in blocks.py. 
+It should be the only place where data is read and written. 
+"""
+
+
 READ_ONLY = True
 
 SUPERBLOCK_SIZE = 4096
@@ -12,7 +20,7 @@ def writingWarning(func):
 	def call(*args, **kwargs):
 		print("Warning! writing changes to the disk!")
 		if not READ_ONLY:
-			func(*args, **kwargs)
+			return func(*args, **kwargs)
 		else:
 			raise SystemError("User abort, change READ_ONLY to False")
 
@@ -85,7 +93,6 @@ class Filesystem():
 		num = findNoOfEntrys(cluster)
 		print(num)
 
-	# unsure, could be moved into directoryentry
 	# Opens a directory and returns a DirectoryEntryList of the contents
 	def openDirectory(self, directoryentry):
 		if not directoryentry.atr.DIRECTORY:
@@ -94,7 +101,6 @@ class Filesystem():
 		cluster = self.readClusterID(directoryentry.cluster)
 		return DirectoryEntryList(cluster, directoryentry.cluster)
 
-	# needs to be adapted(?) for the ne FatxObject types
 	# Reads a File and returns it
 	def readFile(self, directoryentry):
 		data = bytearray()
@@ -130,44 +136,9 @@ class Filesystem():
 			raise e
 		self.writeDirectoryEntry(directoryentry)
 
-	# NEED REWORK - Move into the new FatxObject types
-	# Writes a new file to the FATX
-	def importFile(self, src, dst=None, directoryentry=None):
-		def openFile(filename):
-			return open(filename, 'rb')
-
-		def findDirectoryEntryByPath(path):
-			segments = path.split('/')
-			while '' in segments:
-				segments.remove('')
-			cd = self.root
-			for s in segments:
-				if s in cd.keys():
-					if cd[s].atr.DIRECTORY:
-						cd = self.openDirectory(cd[s])
-					else:
-						raise ValueError("Path element is a file, not directory")
-				else:
-					raise ValueError("Path not found")
-			return cd
-
-		def createNewDirectoryEntry(filename):
-			# create a new directoryentry for this file
-			# this is used to store meta data(size, location, ...)
-			size = os.stat(filename).st_size
-			return DirectoryEntry.new(size, filename)
-
-		inputFile = openFile(src)
-		de = createNewDirectoryEntry(src)
-		if dst:
-			path = findDirectoryEntryByPath(dst)
-		elif directoryentry:
-			path = self.openDirectory(directoryentry)
-		else:
-			raise ValueError("Neither dst nor directoryentry was provided")
-		print(path.keys())
-		self.appendDirectoryEntryList(path["MainAudio"].origin[0],de)
-		return
+	# Warning: Ugly code ahead!
+	@writingWarning
+	def writeFile(self, file, size):
 		# get a clusterchain(=list of free clusters we can write onto)
 		# number of clusters needed to store a file size n
 		nclusters = math.ceil(float(size)/float(self.sb.clusterSize()))
@@ -180,7 +151,15 @@ class Filesystem():
 		for i in cc:
 			offset = self.getClusterOffset(i)
 			self.f.seek(offset)
-			self.f.write(inputFile.read(self.sb.clustersize()))
+			self.f.write(file.read(self.sb.clusterSize()))
+		return cc[0]
+
+	# Writes a DirectoryEntryList to disk
+	@writingWarning
+	def writeDirectoryEntryList(self, dl):
+		self.f.seek(self.getClusterOffset(dl.clusterID))
+		self.f.write(dl.pack())
+
 		
 
 
