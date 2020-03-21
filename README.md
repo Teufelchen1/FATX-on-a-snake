@@ -83,3 +83,7 @@ The `parent()` method always returns the upper directory. If you call it on your
 ```python
 audio.ls() == newFile.parent().ls() 
 ```
+
+## Software insights 
+
+![Class Diagram](https://github.com/Teufelchen1/FATX-on-a-snake/blob/Documentation/interface.png "Interface class diagram")
