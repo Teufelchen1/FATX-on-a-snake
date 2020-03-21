@@ -4,7 +4,7 @@ Small python utility to play with FATX partitions
 This is an educational python utility that lets you walk around in a FATX partition and exporting/importing files from/to it.
 The goal is to Understand, understand the concept of ~love~FATX, uh!
 
-## REMEMBER TO MAKE A BACKUP OF YOU PARTITION BEFORE YOU READ ANY FURTHER
+## REMEMBER TO MAKE A BACKUP OF YOU PARTITION
 
 ## Status
 At the moment, you can safely read files and meta data with this utility. It is missing only some documentation and I would love to add more options/methods to retrieve data in more useful ways in the future. 
@@ -83,3 +83,7 @@ The `parent()` method always returns the upper directory. If you call it on your
 ```python
 audio.ls() == newFile.parent().ls() 
 ```
+
+## Software insights 
+
+![Class Diagram](https://github.com/Teufelchen1/FATX-on-a-snake/blob/Documentation/interface.png "Interface class diagram")
