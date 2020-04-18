@@ -23,6 +23,19 @@ Stuff that I still work on:
 
 
 ## Quick Usage:
+To unpack an image run:
+```sh
+python3 unpack.py fatx.img /tmp
+```
+Which should result in something like this:
+```
+Type: FATX16
+Number of clusters in map: 32768
+Unpacked 226 files.
+```
+
+## Usage:
+
 Run
 ```sh
 python3 main.py /path/to/partition.img
