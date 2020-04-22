@@ -1,6 +1,7 @@
 #!/bin/env python3
 import struct
 import enum
+from typing import List
 
 SUPERBLOCK_SIZE = 4096
 SECTOR_SIZE = 512
@@ -98,6 +99,7 @@ class FAT():
 				return EntryType.FATX_CLUSTER_END
 		return EntryType.FATX_CLUSTER_DATA
 
+	# Warning: Ugly code ahead!
 	# set an entry in the FAT to either a special type or pointer
 	def setEntryType(self, pos, entrytype):
 		if self.size == 2:
@@ -150,6 +152,11 @@ class FAT():
 				raise ValueError("One chain element is invalid", nvalue)
 		return l
 
+	# frees a given chain, setting all cluster free
+	def freeClusterChain(self, chain: List[int]):
+		for cluster in chain:
+			self.setEntryType(cluster, EntryType.FATX_CLUSTER_AVAILABLE)
+
 	# collects a list of IDs/No. of clusters that are free
 	def getFreeClusterChain(self, nclusters):
 		# l shall store the list of free clusters
@@ -163,8 +170,7 @@ class FAT():
 
 	# links a number of clusters together and terminates the list
 	def linkClusterChain(self, clusterchain):
-		import pdb
-		pdb.Pdb().set_trace()
+		clusterchain = clusterchain.copy()
 		index = clusterchain.pop(0)
 		while len(clusterchain) > 0:
 			pointer = clusterchain.pop(0)
@@ -179,6 +185,8 @@ class FAT():
 				data += struct.pack('H', i)
 			else:
 				data += struct.pack('I', i)
+		if len(data) % 4096:
+			data += (4096 - len(data) % 4096)*b'\x00'
 		return data
 
 	def __str__(self):

@@ -1,4 +1,4 @@
-import os, math
+import io, os, math
 from .blocks import SuperBlock, FAT, DirectoryEntry, DirectoryEntryList
 from .interface import *
 
@@ -58,20 +58,20 @@ class Filesystem():
 		print(self.__str__())
 
 	# Calculates the offset for a given clusterID
-	def getClusterOffset(self, clusterID):
+	def getClusterOffset(self, clusterID: int):
 		#(Number of your cluster -1) * cluster size + Superblock + FAT
 		return int((clusterID-1) * self.sb.clusterSize() + SUPERBLOCK_SIZE + self.fat_size)
 
-	def readClusterID(self, ID):
+	def readClusterID(self, ID: int):
 		return self.readCluster(self.getClusterOffset(ID))
 
-	def readCluster(self, offset):
+	def readCluster(self, offset: int):
 		self.f.seek(offset)
 		return self.f.read(self.sb.clusterSize())
 
 	# Should be moved into DirectoryEntryList object
 	# Appends a DirectoryEntry to list
-	def appendDirectoryEntryList(self, clusterID, directoryentry):
+	def appendDirectoryEntryList(self, clusterID: int, directoryentry: DirectoryEntry):
 		def findNoOfEntrys(cluster):
 			numentrys = 0
 			while numentrys < 256:
@@ -94,7 +94,7 @@ class Filesystem():
 		print(num)
 
 	# Opens a directory and returns a DirectoryEntryList of the contents
-	def openDirectory(self, directoryentry):
+	def openDirectory(self, directoryentry: DirectoryEntry):
 		if not directoryentry.atr.DIRECTORY:
 			raise ValueError("This is not a directory, it is a file")
 		# this cluster should contain a DirectoryEntryList
@@ -102,7 +102,7 @@ class Filesystem():
 		return DirectoryEntryList(cluster, directoryentry.cluster)
 
 	# Reads a File and returns it
-	def readFile(self, directoryentry):
+	def readFile(self, directoryentry: DirectoryEntry):
 		data = bytearray()
 		if directoryentry.atr.DIRECTORY:
 			raise ValueError("This is a directory, not a file")
@@ -113,7 +113,7 @@ class Filesystem():
 
 	# Re-Writes a directoryentry i.e. after some attributes changed
 	@writingWarning
-	def writeDirectoryEntry(self, directoryentry):
+	def writeDirectoryEntry(self, directoryentry: DirectoryEntry):
 		delist = directoryentry.origin
 		clusterID = delist.clusterID
 		numentry = delist.list().index(directoryentry)
@@ -124,12 +124,13 @@ class Filesystem():
 			raise SystemError("Unsuccessfull write, your FS is broken now :( sorry!")
 
 	# Deletes a directoryentry and re-writes it
-	def delete(self, directoryentry):
+	def delete(self, directoryentry: DirectoryEntry):
 		directoryentry.atr.DELETED = True
+		# if it is a directory, we have to manually delete all sub elements
 		self.writeDirectoryEntry(directoryentry)
 
 	# Renames a directoryentry and re-writes it
-	def rename(self, directoryentry, name):
+	def rename(self, directoryentry: DirectoryEntry, name: str):
 		try:
 			directoryentry.rename(name)
 		except ValueError as e:
@@ -138,7 +139,7 @@ class Filesystem():
 
 	# Warning: Ugly code ahead!
 	@writingWarning
-	def writeFile(self, file, size):
+	def writeFile(self, file: io.BufferedReader, size: int):
 		# get a clusterchain(=list of free clusters we can write onto)
 		# number of clusters needed to store a file size n
 		nclusters = math.ceil(float(size)/float(self.sb.clusterSize()))
@@ -147,18 +148,27 @@ class Filesystem():
 		except ValueError:
 			raise SystemError("Not enough free space left on the fs")
 		# Make each entry point to the next one and mark the end of the chain
-		self.fat.linkClusterChain(cc.copy())
+		self.fat.linkClusterChain(cc)
 		for i in cc:
 			offset = self.getClusterOffset(i)
 			self.f.seek(offset)
 			self.f.write(file.read(self.sb.clusterSize()))
+		self.writeFat()
 		return cc[0]
 
 	# Writes a DirectoryEntryList to disk
 	@writingWarning
-	def writeDirectoryEntryList(self, dl):
+	def writeDirectoryEntryList(self, dl: DirectoryEntryList):
 		self.f.seek(self.getClusterOffset(dl.clusterID))
 		self.f.write(dl.pack())
+
+	# Writes the FAT to disk
+	@writingWarning
+	def writeFAT(self):
+		data = self.fat.pack()
+		assert(self.fat_size == len(data))
+		self.f.seek(SUPERBLOCK_SIZE)
+		self.f.write(data)
 
 		
 
