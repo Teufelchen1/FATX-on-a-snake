@@ -34,10 +34,12 @@ class SuperBlock():
 
 	def __init__(self, sb):
 		if(SUPERBLOCK_SIZE != len(sb)):
-			print('SuperBlock is not '+ str(SUPERBLOCK_SIZE) +' bytes long')
-			raise BaseException
+			raise BaseException('SuperBlock is not '+ str(SUPERBLOCK_SIZE) +' bytes long')
 		self.name, self.volume, self.clusternum, self.fatcopies = struct.unpack('4sIIh4082x',sb)
-		self.name = self.name.decode("ascii") 
+		try:
+			self.name = self.name.decode("ascii")
+		except UnicodeDecodeError:
+			raise BaseException("Can't decode 'FATX' signiture")
 		assert("FATX" == self.name)
 		assert(1 == self.fatcopies)
 		assert(32 == self.clusternum)
@@ -181,7 +183,7 @@ class FAT():
 	def pack(self):
 		data = b''
 		for i in self.clustermap:
-			if clusterentrysize == 2:
+			if self.size == 2:
 				data += struct.pack('H', i)
 			else:
 				data += struct.pack('I', i)
@@ -267,14 +269,13 @@ class DirectoryEntry():
 		self.atr = self.Attributes()
 
 		if(DIRECTORY_SIZE != len(d)):
-			print('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
 			raise ValueError('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
 		raw = struct.unpack('BB42sII12x',d)
 		self.namesize = raw[0]
 
-		# This is not a real entry, it marks the end of the list
+		# This is not a real entry, it may mark the end of the entry list
 		if 0xFF == self.namesize or 0x00 == self.namesize:
-			raise StopIteration("Reached end of DirectoryEntry list")
+			raise SystemError("Invalid directory entry")
 
 		# This file is deleted(but we will try to recover the name a bit)
 		if 0xE5 == self.namesize:
@@ -283,7 +284,7 @@ class DirectoryEntry():
 
 		# The size of a name cannot exceed the actual byte length of the name field
 		if(42 < self.namesize):
-			raise SystemError("Namesize is longer("+hex(self.namesize)+")then max length("+hex(42)+")")
+			raise SystemError("Namesize is longer("+hex(self.namesize)+")then max length("+hex(42)+").")
 
 		self.attributes = raw[1]
 		self.name = raw[2]
@@ -334,6 +335,7 @@ class DirectoryEntry():
 		except ValueError as e:
 			raise e
 		self.size = size
+		self.cluster = 0
 		self.atr = self.Attributes()
 		return self
 
@@ -342,25 +344,33 @@ class DirectoryEntry():
 
 
 class DirectoryEntryList():
-	# Cluster is the raw binary block containing DirectoryEntrys
-	def __init__(self, cluster, clusterID):
+	# Cluster is the raw binary block containing one ore more DirectoryEntrys
+	# ToDo: use memoryview and aim for zero-copy
+	def __init__(self, data, clusterID):
 		self.clusterID = clusterID
 		self.l = []
-		numentrys = 0
-		while numentrys < 256:
-			try:
-				de = DirectoryEntry(cluster[numentrys*DIRECTORY_SIZE:][:DIRECTORY_SIZE], self)
-				self.l.append(de)
-				numentrys += 1
-			except StopIteration:
+
+		if len(data) % 64 != 0:
+			raise ValueError("Invalid datasize")
+
+		for offset in range(0, len(data), 64):
+			if data[offset] == 0xFF:
+				data = data[:offset]
 				break
-				# end of list
-			except ValueError:
+		else:
+			# in case break wasn't tiggerd
+			raise SystemError("Missing termination of directory entry list")
+
+		for offset in range(0, len(data), 64):
+			try:
+				de = DirectoryEntry(data[offset:offset+DIRECTORY_SIZE], self)
+				self.l.append(de)
+			except ValueError as e:
 				# I messed up
-				raise ValueError
-			except SystemError:
+				raise e
+			except SystemError as e:
 				# The filesystem messed up
-				raise SystemError
+				raise e
 
 	def list(self):
 		return self.l
@@ -372,7 +382,7 @@ class DirectoryEntryList():
 		data = b''
 		for i in self.l:
 			data += i.pack()
-		data += b'\xFF'*DIRECTORY_SIZE
+		data += b'\xFF'+b'\x00'*(DIRECTORY_SIZE-1)
 		return data
 
 	
