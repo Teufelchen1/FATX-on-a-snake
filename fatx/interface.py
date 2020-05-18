@@ -98,8 +98,6 @@ class FatxObject():
 class FileObject(FatxObject):
 
 	def ls(self, deleted=False):
-		import pdb
-		pdb.Pdb().set_trace()
 		raise TypeError("This is a file, not a directory")
 
 	def get(self, path):
