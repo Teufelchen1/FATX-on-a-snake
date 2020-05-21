@@ -1,6 +1,7 @@
 #!/bin/env python3
 import struct
 import enum
+from typing import List
 
 SUPERBLOCK_SIZE = 4096
 SECTOR_SIZE = 512
@@ -33,16 +34,18 @@ class SuperBlock():
 
 	def __init__(self, sb):
 		if(SUPERBLOCK_SIZE != len(sb)):
-			print('SuperBlock is not '+ str(SUPERBLOCK_SIZE) +' bytes long')
-			raise BaseException
+			raise BaseException('SuperBlock is not '+ str(SUPERBLOCK_SIZE) +' bytes long')
 		self.name, self.volume, self.clusternum, self.fatcopies = struct.unpack('4sIIh4082x',sb)
-		self.name = self.name.decode("ascii") 
+		try:
+			self.name = self.name.decode("ascii")
+		except UnicodeDecodeError:
+			raise BaseException("Can't decode 'FATX' signiture")
+
+		self.clustersize = self.clusternum * SECTOR_SIZE
 		assert("FATX" == self.name)
 		assert(1 == self.fatcopies)
 		assert(32 == self.clusternum)
-
-	def clusterSize(self):
-		return self.clusternum * SECTOR_SIZE
+		assert(16384 == self.clustersize)
 
 	def __str__(self):
 		return self.name
@@ -66,12 +69,14 @@ class FAT():
 	|0xfff8 - 0xffff| Marks the end of a cluster chain 
 	"""
 
-	def __init__(self, raw_clustermap, clusterentrysize):
+	def __init__(self, raw_clustermap):
 		self.f = raw_clustermap
-		self.size = clusterentrysize # number of bytes per cluster entry
-									 # usually 2(FATX16) or 4(FATX32) bytes
+		# number of bytes per cluster entry
+		# usually 2(FATX16) or 4(FATX32) bytes
+		self.size = 2 if len(raw_clustermap) < (0xfff5 * 2) else 4
 		self.clustermap = []
 
+		# ToDo use memory view for zerocopy magic
 		# slice up the fat table
 		while len(self.f) > 0:
 			entry = int.from_bytes(self.f[:self.size], 'little')
@@ -98,6 +103,7 @@ class FAT():
 				return EntryType.FATX_CLUSTER_END
 		return EntryType.FATX_CLUSTER_DATA
 
+	# Warning: Ugly code ahead!
 	# set an entry in the FAT to either a special type or pointer
 	def setEntryType(self, pos, entrytype):
 		if self.size == 2:
@@ -147,8 +153,13 @@ class FAT():
 			# lookup the pointer, so we can check if it is the end of the chain
 			nvalue = self.getEntryType(self.clustermap[pointer])
 			if nvalue in [EntryType.FATX_CLUSTER_BAD, EntryType.FATX_CLUSTER_RESERVED, EntryType.FATX_CLUSTER_AVAILABLE]:
-				raise ValueError("One chain element is invalid", nvalue)
+				raise SystemError("One chain element is invalid", nvalue)
 		return l
+
+	# frees a given chain, setting all cluster free
+	def freeClusterChain(self, chain: List[int]):
+		for cluster in chain:
+			self.setEntryType(cluster, EntryType.FATX_CLUSTER_AVAILABLE)
 
 	# collects a list of IDs/No. of clusters that are free
 	def getFreeClusterChain(self, nclusters):
@@ -163,8 +174,7 @@ class FAT():
 
 	# links a number of clusters together and terminates the list
 	def linkClusterChain(self, clusterchain):
-		import pdb
-		pdb.Pdb().set_trace()
+		clusterchain = clusterchain.copy()
 		index = clusterchain.pop(0)
 		while len(clusterchain) > 0:
 			pointer = clusterchain.pop(0)
@@ -175,14 +185,16 @@ class FAT():
 	def pack(self):
 		data = b''
 		for i in self.clustermap:
-			if clusterentrysize == 2:
+			if self.size == 2:
 				data += struct.pack('H', i)
 			else:
 				data += struct.pack('I', i)
+		if len(data) % 4096:
+			data += (4096 - len(data) % 4096)*b'\x00'
 		return data
 
 	def __str__(self):
-		return str(self.numberClusters()) + ' Clusters in map'
+		return "FAT: {0} entrys of {1} bytes each".format(self.numberClusters(), self.size)
 
 
 class DirectoryEntry():
@@ -259,14 +271,13 @@ class DirectoryEntry():
 		self.atr = self.Attributes()
 
 		if(DIRECTORY_SIZE != len(d)):
-			print('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
 			raise ValueError('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
 		raw = struct.unpack('BB42sII12x',d)
 		self.namesize = raw[0]
 
-		# This is not a real entry, it marks the end of the list
+		# This is not a real entry, it may mark the end of the entry list
 		if 0xFF == self.namesize or 0x00 == self.namesize:
-			raise StopIteration("Reached end of DirectoryEntry list")
+			raise SystemError("Invalid directory entry")
 
 		# This file is deleted(but we will try to recover the name a bit)
 		if 0xE5 == self.namesize:
@@ -275,7 +286,7 @@ class DirectoryEntry():
 
 		# The size of a name cannot exceed the actual byte length of the name field
 		if(42 < self.namesize):
-			raise SystemError("Namesize is longer("+hex(self.namesize)+")then max length("+hex(42)+")")
+			raise SystemError("Namesize is longer("+hex(self.namesize)+")then max length("+hex(42)+").")
 
 		self.attributes = raw[1]
 		self.name = raw[2]
@@ -326,6 +337,7 @@ class DirectoryEntry():
 		except ValueError as e:
 			raise e
 		self.size = size
+		self.cluster = 0
 		self.atr = self.Attributes()
 		return self
 
@@ -334,25 +346,33 @@ class DirectoryEntry():
 
 
 class DirectoryEntryList():
-	# Cluster is the raw binary block containing DirectoryEntrys
-	def __init__(self, cluster, clusterID):
+	# Cluster is the raw binary block containing one ore more DirectoryEntrys
+	# ToDo: use memoryview and aim for zero-copy
+	def __init__(self, data, clusterID):
 		self.clusterID = clusterID
 		self.l = []
-		numentrys = 0
-		while numentrys < 256:
-			try:
-				de = DirectoryEntry(cluster[numentrys*DIRECTORY_SIZE:][:DIRECTORY_SIZE], self)
-				self.l.append(de)
-				numentrys += 1
-			except StopIteration:
+
+		if len(data) % 64 != 0:
+			raise ValueError("Invalid datasize")
+
+		for offset in range(0, len(data), 64):
+			if data[offset] == 0xFF:
+				data = data[:offset]
 				break
-				# end of list
-			except ValueError:
+		else:
+			# in case break wasn't tiggerd
+			raise SystemError("Missing termination of directory entry list")
+
+		for offset in range(0, len(data), 64):
+			try:
+				de = DirectoryEntry(data[offset:offset+DIRECTORY_SIZE], self)
+				self.l.append(de)
+			except ValueError as e:
 				# I messed up
-				raise ValueError
-			except SystemError:
+				raise e
+			except SystemError as e:
 				# The filesystem messed up
-				raise SystemError
+				raise e
 
 	def list(self):
 		return self.l
@@ -364,7 +384,7 @@ class DirectoryEntryList():
 		data = b''
 		for i in self.l:
 			data += i.pack()
-		data += b'\xFF'*DIRECTORY_SIZE
+		data += b'\xFF'+b'\x00'*(DIRECTORY_SIZE-1)
 		return data
 
 	
