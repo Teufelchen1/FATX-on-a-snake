@@ -8,7 +8,7 @@ The goal is to Understand, understand the concept of ~love~FATX, uh!
 
 ## Status
 At the moment, you can safely read files and meta data with this utility. It is missing only some documentation and I would love to add more options/methods to retrieve data in more useful ways in the future. 
-~~Writing is possible but limited. You should *ALWAYS* make a backup of your data before even thinking about using my tool in write mode.~~
+Writing is possible but limited. You should *ALWAYS* make a backup of your data before even thinking about using my tool in write mode.
 Stuff that I still work on:
 - Documentation
 - Some code clean-up
@@ -18,7 +18,7 @@ Stuff that I still work on:
 	- filtering
 	- maybe in-place editing/replace of files
 	- Cleaner exception handling in some areas
-- packing and unpacking of entire partitions
+- packing of entire partitions
 - creation of fatx partitions
 
 
@@ -40,7 +40,7 @@ Run
 python3 main.py /path/to/partition.img
 ```
 where partition.img is a FATX partition. Not a Xbox harddrive image. Just a plain partition.
-Note: Huge (>4 GB) partitions may take a while... I didn't bother with optimisations.
+Note: Huge (>4 GB) partitions may take a while... I didn't bother with optimisations yet.
 
 ## Example API usage:
 Open your image file and print some information
@@ -74,16 +74,18 @@ print([str(i) for i in audio.get('MainAudio').ls()])
 
 That `Global A Button Select.wav` sounds interesting, lets export it. The `exportFile()` method returns the file as an array of bytes. So we have to write it to disk ourselves.
 ```python
-file = audio.get('MainAudio/Global A Button Select.wav')
+file = audio.get('MainAudio').get('Global A Button Select.wav')
 f = open(file._name, 'wb')
 f.write(file.export())
 f.close()
 ```
 
-~~Importing a file is as easy as this. Note that this writes to disk. Since I'm not yet confident enough it works flawless, the software ships read only. Go into `fatx/FATX.py` and change the `READ_ONLY = True` to `False` at the top of the file. But be aware, you may lose (all) data if you or FATX-on-a-snake do something stupid.
-You can only import files into directories~~
+Importing a file is as easy as this. Note that this writes to disk. Since I'm not yet confident enough it works flawless, the software ships read only. Go into `fatx/FATX.py` and change the `READ_ONLY = True` to `False` at the top of the file. But be aware, you may lose (all) data if you or FATX-on-a-snake do something stupid.
+You can only import files into directories
 ```python
-audio.importFile("newAudio.wav")
+f = open("newAudio.wav", "rb")
+audio.import_file("newAudio.wav", f.read())
+f.close()
 ```
 
 Renaming is done with the `rename()` method (obviously)

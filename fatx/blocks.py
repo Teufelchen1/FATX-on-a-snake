@@ -173,8 +173,8 @@ class FAT():
 		return l
 
 	# links a number of clusters together and terminates the list
-	def linkClusterChain(self, clusterchain):
-		clusterchain = clusterchain.copy()
+	def linkClusterChain(self, cc):
+		clusterchain = cc.copy()
 		index = clusterchain.pop(0)
 		while len(clusterchain) > 0:
 			pointer = clusterchain.pop(0)
@@ -330,14 +330,15 @@ class DirectoryEntry():
 
 	# ToDo: switch into to functions for either file or directory
 	@classmethod
-	def new(cls, size, name):
+	def new_file(cls, name: str, origin):
 		self = cls.__new__(cls)
 		try:
 			self.rename(name)
 		except ValueError as e:
 			raise e
-		self.size = size
 		self.cluster = 0
+		self.origin = origin
+		self.size = 0
 		self.atr = self.Attributes()
 		return self
 
@@ -348,9 +349,9 @@ class DirectoryEntry():
 class DirectoryEntryList():
 	# Cluster is the raw binary block containing one ore more DirectoryEntrys
 	# ToDo: use memoryview and aim for zero-copy
-	def __init__(self, data, clusterID):
-		self.clusterID = clusterID
-		self.l = []
+	def __init__(self, data, clusterID: int):
+		self.cluster = clusterID
+		self._l = []
 
 		if len(data) % 64 != 0:
 			raise ValueError("Invalid datasize")
@@ -366,7 +367,7 @@ class DirectoryEntryList():
 		for offset in range(0, len(data), 64):
 			try:
 				de = DirectoryEntry(data[offset:offset+DIRECTORY_SIZE], self)
-				self.l.append(de)
+				self._l.append(de)
 			except ValueError as e:
 				# I messed up
 				raise e
@@ -375,14 +376,20 @@ class DirectoryEntryList():
 				raise e
 
 	def list(self):
-		return self.l
+		return self._l
 
 	def append(self, directoryentry):
-		self.l.append(directoryentry)
+		for i in self._l:
+			if i.filename == directoryentry.filename:
+				break
+		else:
+			self._l.append(directoryentry)
+			return
+		raise ValueError(directoryentry.filename+" already exists")
 
 	def pack(self):
 		data = b''
-		for i in self.l:
+		for i in self._l:
 			data += i.pack()
 		data += b'\xFF'+b'\x00'*(DIRECTORY_SIZE-1)
 		return data

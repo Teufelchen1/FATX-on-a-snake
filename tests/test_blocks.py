@@ -108,6 +108,16 @@ class TestFAT(unittest.TestCase):
 			self.assertEqual(0x0000, self.fat.clustermap[i])
 		self.assertEqual(test_chain, chain)
 
+	def test_sliced_getFreeClusterChain(self):
+		test_chain = [10205, 10208, 10209, 10210, 10211]
+		self.fat.clustermap[10206] = 0x1111
+		self.fat.clustermap[10207] = 0x1111
+		chain = self.fat.getFreeClusterChain(5)
+		self.assertEqual(5, len(chain))
+		for i in chain:
+			self.assertEqual(0x0000, self.fat.clustermap[i])
+		self.assertEqual(test_chain, chain)
+
 	def test_linkClusterChain(self):
 		test_chain = [10205, 10206, 10207]
 		self.fat.linkClusterChain(test_chain)
@@ -213,27 +223,27 @@ class TestDirectoryEntry(unittest.TestCase):
 		self.namesize = len(self.filename)
 		self.attributes = 0
 		self.cluster = 0
-		self.filesize = 12345
+		self.filesize = 0
 		self.file = self.pack()
 
-		de = DirectoryEntry.new(12345, "NewEntry")
+		de = DirectoryEntry.new_file("NewEntry", None)
 		self.assertEqual(self.file, de.pack())
 		
 		with self.assertRaises(ValueError):
-			DirectoryEntry.new(12345, "This name is too long, like, so long, is does not fit in 42 chars")
+			DirectoryEntry.new_file("This name is too long, like, so long, is does not fit in 42 chars", 0)
 
 
 class TestDirectoryEntryList(unittest.TestCase):
 	def setUp(self):
 		self.data = b''
 		for i in range(0,100):
-			self.data += DirectoryEntry.new(i, "Entry {:02d}".format(i)).pack()
+			self.data += DirectoryEntry.new_file("Entry {:02d}".format(i), None).pack()
 		self.data += b'\xFF'+b'\x00'*63
 
 	def test_init(self):
 		el = DirectoryEntryList(self.data, 0)
-		self.assertEqual(100, len(el.l))
-		self.assertEqual(0, el.clusterID)
+		self.assertEqual(100, len(el._l))
+		self.assertEqual(0, el.cluster)
 		for i, k in enumerate(el.list()):
 			self.assertEqual("Entry {:02d}".format(i), k.filename)
 
@@ -243,14 +253,14 @@ class TestDirectoryEntryList(unittest.TestCase):
 			DirectoryEntryList(self.data, 0)
 
 	def test_missing_termination(self):
-		self.data = DirectoryEntry.new(0, "Entry").pack()
+		self.data = DirectoryEntry.new_file("Entry", None).pack()
 		self.data *= 5
 		with self.assertRaises(SystemError):
 			DirectoryEntryList(self.data, 0)
 
 	def test_trailing_data(self):
-		self.data += DirectoryEntry.new(0, "Entry").pack()*5
-		self.assertEqual(100, len(DirectoryEntryList(self.data, 0).l))
+		self.data += DirectoryEntry.new_file("Entry", None).pack()*5
+		self.assertEqual(100, len(DirectoryEntryList(self.data, 0)._l))
 
 	def test_list(self):
 		el = DirectoryEntryList(self.data, 0)
@@ -258,7 +268,7 @@ class TestDirectoryEntryList(unittest.TestCase):
 
 	def test_append(self):
 		el = DirectoryEntryList(self.data, 0)
-		de = DirectoryEntry.new(0, "New")
+		de = DirectoryEntry.new_file("New", None)
 		el.append(de)
 		self.assertEqual(101, len(el.list()))
 		self.assertIn(de, el.list())
@@ -267,7 +277,7 @@ class TestDirectoryEntryList(unittest.TestCase):
 		el = DirectoryEntryList(self.data, 0)
 		self.assertEqual(self.data, el.pack())
 
-		de = DirectoryEntry.new(0, "New")
+		de = DirectoryEntry.new_file("New", None)
 		el.append(de)
 		self.assertIn(de.pack(), el.pack())
 

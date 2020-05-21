@@ -18,15 +18,17 @@ DIRECTORY_SIZE = 64
 FATX16 = 2
 FATX32 = 4
 
-def writingWarning(func):
+def writing_warning(func):
 	def call(*args, **kwargs):
 		print("Warning! Writing changes to the disk!")
 		if not READ_ONLY:
 			return func(*args, **kwargs)
 		else:
-			raise SystemError("User abort, change READ_ONLY to False")
+			print("Skip saving changes to disk, change READ_ONLY to False")
+			return None
 
 	return call
+
 
 class Filesystem():
 	def __init__(self, file):
@@ -70,8 +72,53 @@ class Filesystem():
 			print("\tread {0} from {1} bytes".format(len(data), de.size))
 			return data
 
+	def rename_object(self, de: DirectoryEntry, name: str):
+		de.rename(name)
+		self._write_directory_entry(de)
+
+	def import_file(self, dl: DirectoryEntryList, name: str, data: bytes):
+		de = DirectoryEntry.new_file(name, dl)
+		de.size = len(data)
+		# get a clusterchain(=list of free clusters we can write onto)
+		# number of clusters needed to store a file size n
+		nclusters = math.ceil(float(de.size)/float(self.sb.clustersize))
+		chain = self.fat.getFreeClusterChain(nclusters)
+		de.cluster = chain[0]
+		dl.append(de)
+
+		import pdb
+		pdb.Pdb().set_trace()
+
+		self.fat.linkClusterChain(chain)
+		self._write_data(chain, data)
+		self._write_directory_list(dl)
+		# ToDo: very inefficient, needs to be redone
+		self._write_fat()
+
 	def status(self):
 		print(self.__str__())
+
+	def _write_directory_entry(self, de: DirectoryEntry):
+		# ToDo: Reduce to writing this single DirectoryEntry
+		# i.e. position_of_de * de_size + base_address
+		self._write_directory_list(de.origin)
+
+	@writing_warning
+	def _write_directory_list(self, dl: DirectoryEntryList):
+		self.f.seek(self._cluster_id_offset(dl.cluster))
+		self.f.write(dl.pack())
+
+	@writing_warning
+	def _write_fat(self):
+		self.f.seek(SUPERBLOCK_SIZE)
+		self.f.write(self.fat.pack())
+
+	@writing_warning
+	def _write_data(self, clusterchain: [int], data):
+		for i in clusterchain:
+			self.f.seek(self._cluster_id_offset(i))
+			self.f.write(data[:self.sb.clustersize])
+			data = data[self.sb.clustersize:]
 
 	def _get_cluster(self, ID: int):
 		self.f.seek(self._cluster_id_offset(ID))

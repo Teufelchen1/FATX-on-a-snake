@@ -31,13 +31,6 @@ class FatxObject():
 		self.attributes = self._de.atr
 		self._parent = parent
 
-	def ls(self, deleted=False):
-		"""
-		if self is a directory, this should list all items
-		in this directory
-		"""
-		raise NotImplementedError("Override this in the subclass")
-
 	def details(self):
 		"""
 		Prints its own attributes
@@ -51,11 +44,15 @@ class FatxObject():
 		"""
 		return self._parent
 
-	def rename(self, name):
+	def rename(self, name: str):
 		"""
 		renames this object and safes the change to disk
 		"""
-		self._filesystem.rename(self._de, name)
+		try:
+			self._filesystem.rename_object(self._de, name)
+			self._name = self._de.filename
+		except ValueError as e:
+			print(e)
 
 	def delete(self):
 		"""
@@ -64,7 +61,7 @@ class FatxObject():
 		raise NotImplementedError("Override this in the subclass")
 
 	def __str__(self):
-		return self._de.filename
+		return self._name
 
 	def __repr__(self):
 		return str(self.__class__)+ ': ' + str(self)
@@ -100,7 +97,7 @@ class DirectoryObject(FatxObject):
 			self._elements = self._create_obj_list()
 		return [i for i in self._elements if (not i.attributes.DELETED or deleted)]
 
-	def get(self, name):
+	def get(self, name: str):
 		"""
 		returns the FatxObject for a given filename
 		"""
@@ -112,11 +109,14 @@ class DirectoryObject(FatxObject):
 				return i
 		raise IndexError()
 
-	def importFile(self, path):
+	def import_file(self, filename: str, data: bytes):
 		"""
-		imports a given data-bytearray to filename into this folder
+		imports a given bytearray to filename into this folder
 		"""
-		raise NotImplementedError()
+		try:
+			self._filesystem.import_file(self._dl, filename, data)
+		except ValueError as e:
+			print(e)
 
 	def _create_obj_list(self):
 			elements = []
