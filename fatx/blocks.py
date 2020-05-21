@@ -40,12 +40,12 @@ class SuperBlock():
 			self.name = self.name.decode("ascii")
 		except UnicodeDecodeError:
 			raise BaseException("Can't decode 'FATX' signiture")
+
+		self.clustersize = self.clusternum * SECTOR_SIZE
 		assert("FATX" == self.name)
 		assert(1 == self.fatcopies)
 		assert(32 == self.clusternum)
-
-	def clusterSize(self):
-		return self.clusternum * SECTOR_SIZE
+		assert(16384 == self.clustersize)
 
 	def __str__(self):
 		return self.name
@@ -69,12 +69,14 @@ class FAT():
 	|0xfff8 - 0xffff| Marks the end of a cluster chain 
 	"""
 
-	def __init__(self, raw_clustermap, clusterentrysize):
+	def __init__(self, raw_clustermap):
 		self.f = raw_clustermap
-		self.size = clusterentrysize # number of bytes per cluster entry
-									 # usually 2(FATX16) or 4(FATX32) bytes
+		# number of bytes per cluster entry
+		# usually 2(FATX16) or 4(FATX32) bytes
+		self.size = 2 if len(raw_clustermap) < (0xfff5 * 2) else 4
 		self.clustermap = []
 
+		# ToDo use memory view for zerocopy magic
 		# slice up the fat table
 		while len(self.f) > 0:
 			entry = int.from_bytes(self.f[:self.size], 'little')
@@ -151,7 +153,7 @@ class FAT():
 			# lookup the pointer, so we can check if it is the end of the chain
 			nvalue = self.getEntryType(self.clustermap[pointer])
 			if nvalue in [EntryType.FATX_CLUSTER_BAD, EntryType.FATX_CLUSTER_RESERVED, EntryType.FATX_CLUSTER_AVAILABLE]:
-				raise ValueError("One chain element is invalid", nvalue)
+				raise SystemError("One chain element is invalid", nvalue)
 		return l
 
 	# frees a given chain, setting all cluster free
@@ -171,8 +173,8 @@ class FAT():
 		return l
 
 	# links a number of clusters together and terminates the list
-	def linkClusterChain(self, clusterchain):
-		clusterchain = clusterchain.copy()
+	def linkClusterChain(self, cc):
+		clusterchain = cc.copy()
 		index = clusterchain.pop(0)
 		while len(clusterchain) > 0:
 			pointer = clusterchain.pop(0)
@@ -192,7 +194,7 @@ class FAT():
 		return data
 
 	def __str__(self):
-		return str(self.numberClusters()) + ' Clusters in map'
+		return "FAT: {0} entrys of {1} bytes each".format(self.numberClusters(), self.size)
 
 
 class DirectoryEntry():
@@ -328,14 +330,15 @@ class DirectoryEntry():
 
 	# ToDo: switch into to functions for either file or directory
 	@classmethod
-	def new(cls, size, name):
+	def new_file(cls, name: str, origin):
 		self = cls.__new__(cls)
 		try:
 			self.rename(name)
 		except ValueError as e:
 			raise e
-		self.size = size
 		self.cluster = 0
+		self.origin = origin
+		self.size = 0
 		self.atr = self.Attributes()
 		return self
 
@@ -346,9 +349,9 @@ class DirectoryEntry():
 class DirectoryEntryList():
 	# Cluster is the raw binary block containing one ore more DirectoryEntrys
 	# ToDo: use memoryview and aim for zero-copy
-	def __init__(self, data, clusterID):
-		self.clusterID = clusterID
-		self.l = []
+	def __init__(self, data, clusterID: int):
+		self.cluster = clusterID
+		self._l = []
 
 		if len(data) % 64 != 0:
 			raise ValueError("Invalid datasize")
@@ -364,7 +367,7 @@ class DirectoryEntryList():
 		for offset in range(0, len(data), 64):
 			try:
 				de = DirectoryEntry(data[offset:offset+DIRECTORY_SIZE], self)
-				self.l.append(de)
+				self._l.append(de)
 			except ValueError as e:
 				# I messed up
 				raise e
@@ -373,14 +376,20 @@ class DirectoryEntryList():
 				raise e
 
 	def list(self):
-		return self.l
+		return self._l
 
 	def append(self, directoryentry):
-		self.l.append(directoryentry)
+		for i in self._l:
+			if i.filename == directoryentry.filename:
+				break
+		else:
+			self._l.append(directoryentry)
+			return
+		raise ValueError(directoryentry.filename+" already exists")
 
 	def pack(self):
 		data = b''
-		for i in self.l:
+		for i in self._l:
 			data += i.pack()
 		data += b'\xFF'+b'\x00'*(DIRECTORY_SIZE-1)
 		return data

@@ -1,18 +1,18 @@
 import json, sys, os
-from fatx import FATX
-from fatx.interface import FatxObject, DirectoryObject
+from fatx import fatx2 as FATX
+from fatx.interface2 import FatxObject, DirectoryObject
 
-def iterate(obj: FatxObject):
+def walkfs(obj: FatxObject):
 	count = 0
 	for item in obj.ls():
 		if isinstance(item, DirectoryObject):
 			os.mkdir(str(item))
 			os.chdir(str(item))
-			count += iterate(item)
+			count += walkfs(item)
 			os.chdir('..')
 		else:
 			f = open(str(item),'wb')
-			f.write(item.exportFile())
+			f.write(item.export())
 			f.close()
 			count += 1
 	return count
@@ -32,5 +32,5 @@ if __name__ == "__main__":
 	fs.status()
 	root = fs.root
 	os.chdir(dest)
-	print("Unpacked {0} files.".format(iterate(root)))
+	print("Unpacked {0} files.".format(walkfs(root)))
 
