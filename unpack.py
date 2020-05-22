@@ -1,6 +1,6 @@
 import json, sys, os
-from fatx import fatx2 as FATX
-from fatx.interface2 import FatxObject, DirectoryObject
+from fatx import FATX
+from fatx.interface import FatxObject, DirectoryObject
 
 def walkfs(obj: FatxObject):
 	count = 0

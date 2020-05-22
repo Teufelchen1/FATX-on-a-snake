@@ -31,7 +31,7 @@ def writing_warning(func):
 
 
 class Filesystem():
-	def __init__(self, file):
+	def __init__(self, file: str):
 		self.f = open(file, 'r+b')
 		self.sb = SuperBlock(self.f.read(SUPERBLOCK_SIZE))
 
@@ -44,6 +44,27 @@ class Filesystem():
 		# Read the first(yes, 1, not zero) Cluster, it should contain the root DirectoryEntry list
 		cluster = self._get_cluster(1)
 		self.root = RootObject(DirectoryEntryList(cluster, 1))
+
+	@classmethod
+	def new(cls, size: int, file: str):
+		self = cls.__new__(cls)
+		self.f = open(file, 'w+b')
+
+		self.sb = SuperBlock.new()
+		self.fat_size = self._calc_fat_size(size, 32*512)
+		self.fat = FAT.new(self.fat_size)
+		root_dl = DirectoryEntryList(b'\xFF'*64, 1)
+
+		self.f.write(self.sb.pack())
+		self.f.write(self.fat.pack())
+		self.f.write(b'\x00'*(size - self.fat_size - SUPERBLOCK_SIZE))
+		self._write_directory_list(root_dl)
+
+		FatxObject.registerFilesystem(self)
+
+		cluster = self._get_cluster(1)
+		self.root = RootObject(DirectoryEntryList(cluster, 1))
+		return self
 
 	# returns a DirectoryEntryList from the cluster assosiated in the given directoryentry
 	def open_directory(self, de: DirectoryEntry):
@@ -76,8 +97,20 @@ class Filesystem():
 		de.rename(name)
 		self._write_directory_entry(de)
 
+	def create_folder(self, dl: DirectoryEntryList, name: str):
+		de = DirectoryEntry.new_entry(name, dl)
+		de.atr.DIRECTORY = True
+		dl.append(de)
+		chain = self.fat.getFreeClusterChain(1)
+		de.cluster = chain[0]
+		new_dl = DirectoryEntryList(b'\xFF'*64, chain[0])
+
+		self.fat.linkClusterChain(chain)
+		self._write_directory_list(dl)
+		self._write_directory_list(new_dl)
+
 	def import_file(self, dl: DirectoryEntryList, name: str, data: bytes):
-		de = DirectoryEntry.new_file(name, dl)
+		de = DirectoryEntry.new_entry(name, dl)
 		de.size = len(data)
 		# get a clusterchain(=list of free clusters we can write onto)
 		# number of clusters needed to store a file size n
@@ -85,9 +118,6 @@ class Filesystem():
 		chain = self.fat.getFreeClusterChain(nclusters)
 		de.cluster = chain[0]
 		dl.append(de)
-
-		import pdb
-		pdb.Pdb().set_trace()
 
 		self.fat.linkClusterChain(chain)
 		self._write_data(chain, data)
@@ -106,7 +136,10 @@ class Filesystem():
 	@writing_warning
 	def _write_directory_list(self, dl: DirectoryEntryList):
 		self.f.seek(self._cluster_id_offset(dl.cluster))
-		self.f.write(dl.pack())
+		data = dl.pack()
+		# add padding
+		data += (self.sb.clustersize-len(data))*b'\xFF'
+		self.f.write(data)
 
 	@writing_warning
 	def _write_fat(self):

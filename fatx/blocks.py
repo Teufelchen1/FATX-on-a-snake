@@ -1,6 +1,7 @@
 #!/bin/env python3
 import struct
 import enum
+import random
 from typing import List
 
 SUPERBLOCK_SIZE = 4096
@@ -47,6 +48,23 @@ class SuperBlock():
 		assert(32 == self.clusternum)
 		assert(16384 == self.clustersize)
 
+	@classmethod
+	def new(cls):
+		self = cls.__new__(cls)
+		self.name = "FATX"
+		self.volume = random.randint(0,0xFFFFFFFF)
+		self.clusternum = 32
+		self.clustersize = self.clusternum * SECTOR_SIZE
+		self.fatcopies = 1
+		return self
+
+	def pack(self):
+		return struct.pack('4sIIh4082s', bytearray(self.name, 'ascii'),
+										 self.volume,
+										 self.clusternum,
+										 self.fatcopies,
+										 4082*b'\xFF')
+
 	def __str__(self):
 		return self.name
 
@@ -57,6 +75,7 @@ class EntryType(enum.Enum):
 	FATX_CLUSTER_BAD = 2
 	FATX_CLUSTER_DATA = 3
 	FATX_CLUSTER_END = 4
+	FATX_CLUSTER_START = 5
 
 
 class FAT():
@@ -182,13 +201,25 @@ class FAT():
 			index = pointer
 		self.setEntryType(index, EntryType.FATX_CLUSTER_END)
 
+	@classmethod
+	def new(cls, size):
+		self = cls(size*b'\x00')
+		if self.size == 2:
+			self.clustermap[0] = 0xFFF8
+			self.clustermap[1] = 0xFFFF
+		else:
+			self.clustermap[0] = 0xFFFFFFF8
+			self.clustermap[1] = 0xFFFFFFFF
+		return self
+
 	def pack(self):
 		data = b''
+		if self.size == 2:
+			datatype = 'H'
+		else:
+			datatype = 'I'
 		for i in self.clustermap:
-			if self.size == 2:
-				data += struct.pack('H', i)
-			else:
-				data += struct.pack('I', i)
+			data += struct.pack(datatype, i)
 		if len(data) % 4096:
 			data += (4096 - len(data) % 4096)*b'\x00'
 		return data
@@ -330,7 +361,7 @@ class DirectoryEntry():
 
 	# ToDo: switch into to functions for either file or directory
 	@classmethod
-	def new_file(cls, name: str, origin):
+	def new_entry(cls, name: str, origin):
 		self = cls.__new__(cls)
 		try:
 			self.rename(name)
@@ -379,6 +410,8 @@ class DirectoryEntryList():
 		return self._l
 
 	def append(self, directoryentry):
+		if len(self._l) > 254:
+			raise ValueError("Not more then 255 entries allowed in a single directory")
 		for i in self._l:
 			if i.filename == directoryentry.filename:
 				break
@@ -391,7 +424,7 @@ class DirectoryEntryList():
 		data = b''
 		for i in self._l:
 			data += i.pack()
-		data += b'\xFF'+b'\x00'*(DIRECTORY_SIZE-1)
+		data += b'\xFF'*DIRECTORY_SIZE
 		return data
 
 	

@@ -115,6 +115,14 @@ class DirectoryObject(FatxObject):
 		"""
 		try:
 			self._filesystem.import_file(self._dl, filename, data)
+			self._elements = self._create_obj_list()
+		except ValueError as e:
+			print(e)
+
+	def create_dir(self, dirname: str):
+		try:
+			self._filesystem.create_folder(self._dl, dirname)
+			self._elements = self._create_obj_list()
 		except ValueError as e:
 			print(e)
 
