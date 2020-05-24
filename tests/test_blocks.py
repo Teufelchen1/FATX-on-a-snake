@@ -226,19 +226,19 @@ class TestDirectoryEntry(unittest.TestCase):
 		self.filesize = 0
 		self.file = self.pack()
 
-		de = DirectoryEntry.new_file("NewEntry", None)
+		de = DirectoryEntry.new_entry("NewEntry", None)
 		self.assertEqual(self.file, de.pack())
 		
 		with self.assertRaises(ValueError):
-			DirectoryEntry.new_file("This name is too long, like, so long, is does not fit in 42 chars", 0)
+			DirectoryEntry.new_entry("This name is too long, like, so long, is does not fit in 42 chars", 0)
 
 
 class TestDirectoryEntryList(unittest.TestCase):
 	def setUp(self):
 		self.data = b''
 		for i in range(0,100):
-			self.data += DirectoryEntry.new_file("Entry {:02d}".format(i), None).pack()
-		self.data += b'\xFF'+b'\x00'*63
+			self.data += DirectoryEntry.new_entry("Entry {:02d}".format(i), None).pack()
+		self.data += b'\xFF'*64
 
 	def test_init(self):
 		el = DirectoryEntryList(self.data, 0)
@@ -253,13 +253,13 @@ class TestDirectoryEntryList(unittest.TestCase):
 			DirectoryEntryList(self.data, 0)
 
 	def test_missing_termination(self):
-		self.data = DirectoryEntry.new_file("Entry", None).pack()
+		self.data = DirectoryEntry.new_entry("Entry", None).pack()
 		self.data *= 5
 		with self.assertRaises(SystemError):
 			DirectoryEntryList(self.data, 0)
 
 	def test_trailing_data(self):
-		self.data += DirectoryEntry.new_file("Entry", None).pack()*5
+		self.data += DirectoryEntry.new_entry("Entry", None).pack()*5
 		self.assertEqual(100, len(DirectoryEntryList(self.data, 0)._l))
 
 	def test_list(self):
@@ -268,7 +268,7 @@ class TestDirectoryEntryList(unittest.TestCase):
 
 	def test_append(self):
 		el = DirectoryEntryList(self.data, 0)
-		de = DirectoryEntry.new_file("New", None)
+		de = DirectoryEntry.new_entry("New", None)
 		el.append(de)
 		self.assertEqual(101, len(el.list()))
 		self.assertIn(de, el.list())
@@ -277,7 +277,7 @@ class TestDirectoryEntryList(unittest.TestCase):
 		el = DirectoryEntryList(self.data, 0)
 		self.assertEqual(self.data, el.pack())
 
-		de = DirectoryEntry.new_file("New", None)
+		de = DirectoryEntry.new_entry("New", None)
 		el.append(de)
 		self.assertIn(de.pack(), el.pack())
 
