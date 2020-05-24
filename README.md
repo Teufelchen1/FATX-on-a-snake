@@ -9,17 +9,27 @@ The goal is to Understand, understand the concept of ~love~FATX, uh!
 ## Status
 At the moment, you can safely read files and meta data with this utility. It is missing only some documentation and I would love to add more options/methods to retrieve data in more useful ways in the future. 
 Writing is possible but limited. You should *ALWAYS* make a backup of your data before even thinking about using my tool in write mode.
+
+Stuff that works _great_:
+- List files and folders
+- Exporting of files / unpacking of partitions
+- Creation of folders
+- Import of files
+
+Stuff that somewhat works:
+- Creation of new partitions
+- Packing of partitions
+
 Stuff that I still work on:
 - Documentation
 - Some code clean-up
-- Deleting files
+- Deleting files / freeing space
 - Filesystem checks
-- General function enhancements
-	- filtering
-	- maybe in-place editing/replace of files
-	- Cleaner exception handling in some areas
-- packing of entire partitions
-- creation of fatx partitions
+
+Stuff thats still on my wishlist:
+- in-place editing/replace of files
+- exporting virtual file interfaces
+- rewrite everything in Rust as a fusedriver 😇
 
 
 ## Quick Usage:
@@ -35,12 +45,30 @@ Unpacked 226 files.
 
 ## Usage:
 
-Run
+Run `main.py` to verify everything checks out
 ```sh
 python3 main.py /path/to/partition.img
 ```
 where partition.img is a FATX partition. Not a Xbox harddrive image. Just a plain partition.
 Note: Huge (>4 GB) partitions may take a while... I didn't bother with optimisations yet.
+
+Run `unpack.py` to export all files & folders of a partition
+```sh
+mkdir tmp/
+python3 unpack.py /path/to/partition.img tmp/
+cd tmp && ls
+```
+
+Run `pack.py` to create new partitions based on a local folder. You must provide the target partition size in bytes, a src folder(can be empty, will result in an empty but valid image) and a name for the new partition. The volume ID is randomly generated.
+```sh
+python3 pack.py 524288000 src/ dest.img
+```
+
+Run `extract_blocks.py` to easily access the most important parts of a FATX partition. i.e. look at the exported binarys with a hexeditor. 
+```sh
+python3 extract_blocks.py /path/to/partition.img
+cd partition.img.extract && ls
+```
 
 ## Example API usage:
 Open your image file and print some information
