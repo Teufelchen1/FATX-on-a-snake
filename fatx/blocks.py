@@ -36,7 +36,7 @@ class SuperBlock():
 	def __init__(self, sb):
 		if(SUPERBLOCK_SIZE != len(sb)):
 			raise BaseException('SuperBlock is not '+ str(SUPERBLOCK_SIZE) +' bytes long')
-		self.name, self.volume, self.clusternum, self.fatcopies = struct.unpack('4sIIh4082x',sb)
+		self.name, self.volume, self.clusternum, self.fatcopies = struct.unpack('<4sIIh4082x',sb)
 		try:
 			self.name = self.name.decode("ascii")
 		except UnicodeDecodeError:
@@ -59,7 +59,7 @@ class SuperBlock():
 		return self
 
 	def pack(self):
-		return struct.pack('4sIIh4082s', bytearray(self.name, 'ascii'),
+		return struct.pack('<4sIIh4082s', bytearray(self.name, 'ascii'),
 										 self.volume,
 										 self.clusternum,
 										 self.fatcopies,
@@ -215,9 +215,9 @@ class FAT():
 	def pack(self):
 		data = b''
 		if self.size == 2:
-			datatype = 'H'
+			datatype = '<H'
 		else:
-			datatype = 'I'
+			datatype = '<I'
 		for i in self.clustermap:
 			data += struct.pack(datatype, i)
 		if len(data) % 4096:
@@ -303,7 +303,7 @@ class DirectoryEntry():
 
 		if(DIRECTORY_SIZE != len(d)):
 			raise ValueError('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
-		raw = struct.unpack('BB42sII12x',d)
+		raw = struct.unpack('<BB42sII12x',d)
 		self.namesize = raw[0]
 
 		# This is not a real entry, it may mark the end of the entry list
@@ -352,7 +352,7 @@ class DirectoryEntry():
 		self.attributes |= set_bit(self.atr.ARCHIVE, self.ATR_ARCHIVE)
 		if self.atr.DELETED:
 			self.namesize = 0xE5
-		raw = struct.pack('BB42sII12x', self.namesize,
+		raw = struct.pack('<BB42sII12x', self.namesize,
 										self.attributes,
 										self.name,
 										self.cluster,

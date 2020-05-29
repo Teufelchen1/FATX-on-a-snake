@@ -168,7 +168,7 @@ class Filesystem():
 	def _calc_fat_size(partition_size: int, cluster_size: int = 32*512):
 		# ((partition size in bytes / cluster size) * cluster map entry size)
 		# rounded up to nearest 4096 byte boundary.
-		number_of_clusters = partition_size / cluster_size
+		number_of_clusters = partition_size // cluster_size
 		size = FATX16 if number_of_clusters <= 0xfff5 else FATX32 # deciding how big a fat entry is in bytes
 		fat_size = number_of_clusters * size
 		if fat_size % 4096:
