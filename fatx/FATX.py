@@ -125,6 +125,10 @@ class Filesystem():
 		# ToDo: very inefficient, needs to be redone
 		self._write_fat()
 
+	def delete_file(self, de: DirectoryEntry, clean=False):
+		de.atr.DELETED = True
+		self._write_directory_entry(de)
+
 	def status(self):
 		print(self.__str__())
 

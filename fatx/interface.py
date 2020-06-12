@@ -68,6 +68,12 @@ class FatxObject():
 
 
 class FileObject(FatxObject):
+	def delete(self):
+		"""
+		deletes this file
+		"""
+		return self._filesystem.delete_file(self._de)
+
 	def export(self):
 		"""
 		returns all bytes belonging to this file
