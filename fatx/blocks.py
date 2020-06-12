@@ -4,9 +4,6 @@ import enum
 import random
 from typing import List
 
-SUPERBLOCK_SIZE = 4096
-SECTOR_SIZE = 512
-DIRECTORY_SIZE = 64
 
 class SuperBlock():
 	"""
@@ -19,49 +16,36 @@ class SuperBlock():
 	18		4078	Unused
 	"""
 	SUPERBLOCK_SIZE = 4096
-	SECTOR_SIZE = 512
-	SB_OFS_Name = 0
-	SB_SIZE_Name = 4
-	SB_OFS_VolumeId = 4
-	SB_SIZE_VolumeId = 4
-	SB_OFS_ClusterSize = 8
-	SB_SIZE_ClusterSize = 4
-	SB_OFS_FATCopies = 12
-	SB_SIZE_FATCopies = 2
-	SB_OFS_Unkown = 14
-	SB_SIZE_Unkown = 4
-	SB_OFS_Unused = 18
-	SB_SIZE_Unused = 4078
 
-	def __init__(self, sb):
-		if(SUPERBLOCK_SIZE != len(sb)):
-			raise BaseException('SuperBlock is not '+ str(SUPERBLOCK_SIZE) +' bytes long')
-		self.name, self.volume, self.clusternum, self.fatcopies = struct.unpack('<4sIIh4082x',sb)
+	def __init__(self, sb, sector_size):
+		self.SECTOR_SIZE = sector_size
+		if(self.SUPERBLOCK_SIZE != len(sb)):
+			raise BaseException('SuperBlock is not '+ str(self.SUPERBLOCK_SIZE) +' bytes long')
+		self.name, self.volume, self.cluster_num, self.fatcopies = struct.unpack('<4sIIh4082x',sb)
 		try:
 			self.name = self.name.decode("ascii")
 		except UnicodeDecodeError:
 			raise BaseException("Can't decode 'FATX' signiture")
 
-		self.clustersize = self.clusternum * SECTOR_SIZE
+		self.cluster_size = self.cluster_num * self.SECTOR_SIZE
 		assert("FATX" == self.name)
 		assert(1 == self.fatcopies)
-		assert(32 == self.clusternum)
-		assert(16384 == self.clustersize)
 
 	@classmethod
-	def new(cls):
+	def new(cls, sector_size):
 		self = cls.__new__(cls)
+		self.SECTOR_SIZE = sector_size
 		self.name = "FATX"
 		self.volume = random.randint(0,0xFFFFFFFF)
-		self.clusternum = 32
-		self.clustersize = self.clusternum * SECTOR_SIZE
+		self.cluster_num = 32
+		self.cluster_size = self.cluster_num * self.SECTOR_SIZE
 		self.fatcopies = 1
 		return self
 
 	def pack(self):
 		return struct.pack('<4sIIh4082s', bytearray(self.name, 'ascii'),
 										 self.volume,
-										 self.clusternum,
+										 self.cluster_num,
 										 self.fatcopies,
 										 4082*b'\xFF')
 
@@ -101,6 +85,11 @@ class FAT():
 			entry = int.from_bytes(self.f[:self.size], 'little')
 			self.f = self.f[self.size:]
 			self.clustermap.append(entry)
+
+		if self.size == 2:
+			assert(0xFFF8 == self.clustermap[0])
+		else:
+			assert(0xFFFFFFF8 == self.clustermap[0])
 
 	def numberClusters(self):
 		return len(self.clustermap)
@@ -245,16 +234,6 @@ class DirectoryEntry():
 	62		2		Last access date
 	"""
 	DIRECTORY_SIZE = 64
-	D_OFS_NAMESIZE = 0
-	D_SIZE_NAMESIZE = 1
-	D_OFS_ATTRIBUT = 1
-	D_SIZE_ATTRIBUT = 1
-	D_OFS_NAME = 2
-	D_SIZE_NAME = 42
-	D_OFS_CLUSTER = 44
-	D_SIZE_CLUSTER = 4
-	D_OFS_FILESIZE = 48
-	D_SIZE_FILESIZE = 4
 
 	"""
 	Attributes, byte values/mask
@@ -301,7 +280,7 @@ class DirectoryEntry():
 		self.origin = origin
 		self.atr = self.Attributes()
 
-		if(DIRECTORY_SIZE != len(d)):
+		if(self.DIRECTORY_SIZE != len(d)):
 			raise ValueError('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
 		raw = struct.unpack('<BB42sII12x',d)
 		self.namesize = raw[0]
@@ -387,8 +366,11 @@ class DirectoryEntryList():
 		if len(data) % 64 != 0:
 			raise ValueError("Invalid datasize")
 
-		for offset in range(0, len(data), 64):
+		for offset in range(0, len(data), DirectoryEntry.DIRECTORY_SIZE):
 			if data[offset] == 0xFF:
+				data = data[:offset]
+				break
+			if data[offset] == 0x00:
 				data = data[:offset]
 				break
 		else:
@@ -397,7 +379,7 @@ class DirectoryEntryList():
 
 		for offset in range(0, len(data), 64):
 			try:
-				de = DirectoryEntry(data[offset:offset+DIRECTORY_SIZE], self)
+				de = DirectoryEntry(data[offset:offset+DirectoryEntry.DIRECTORY_SIZE], self)
 				self._l.append(de)
 			except ValueError as e:
 				# I messed up
@@ -424,7 +406,7 @@ class DirectoryEntryList():
 		data = b''
 		for i in self._l:
 			data += i.pack()
-		data += b'\xFF'*DIRECTORY_SIZE
+		data += b'\xFF'*DirectoryEntry.DIRECTORY_SIZE
 		return data
 
 	

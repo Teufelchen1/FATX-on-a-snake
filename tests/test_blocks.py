@@ -11,35 +11,35 @@ class TestSuperBlock(unittest.TestCase):
 		self.f.close()
 
 	def test_read_correct_superblock(self):
-		sb = SuperBlock(self.bytes)
+		sb = SuperBlock(self.bytes, 512)
 		self.assertEqual("FATX", sb.name)
 		self.assertEqual("FATX", str(sb))
 		self.assertEqual(1, sb.fatcopies)
-		self.assertEqual(32, sb.clusternum)
+		self.assertEqual(32, sb.cluster_num)
 
 	def test_read_incorrect_signuture(self):
 		l = list(self.bytes)
 		l[1] = ord('B')
 		self.bytes = bytes(l)
 		with self.assertRaises(AssertionError):
-			SuperBlock(self.bytes)
+			SuperBlock(self.bytes, 512)
 
 	def test_read_invalid_signuture(self):
 		l = list(self.bytes)
 		l[1] = 0xFF
 		self.bytes = bytes(l)
 		with self.assertRaises(BaseException):
-			SuperBlock(self.bytes)
+			SuperBlock(self.bytes, 512)
 
 	def test_too_long_superblock(self):
 		self.bytes += b'\xFF\xFF'
 		with self.assertRaises(BaseException):
-			SuperBlock(self.bytes)
+			SuperBlock(self.bytes, 512)
 
-	def test_clustersize(self):
-		sb = SuperBlock(self.bytes)
+	def test_cluster_size(self):
+		sb = SuperBlock(self.bytes, 512)
 		# Default Xbox cluster size is 16k
-		self.assertEqual(16384, sb.clustersize)
+		self.assertEqual(16384, sb.cluster_size)
 
 
 class TestFAT(unittest.TestCase):
