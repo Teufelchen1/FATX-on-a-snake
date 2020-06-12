@@ -5,408 +5,448 @@ import random
 from typing import List
 
 
-class SuperBlock():
-	"""
-	Offset	Size	Description
-	0		4		"FATX" string (ASCII)
-	4		4		Volume ID (int)
-	8		4		Cluster size in (512 byte) sectors
-	12		2		Number of FAT copies
-	14		4		Unknown (always 0?)
-	18		4078	Unused
-	"""
-	SUPERBLOCK_SIZE = 4096
+class SuperBlock:
+    """
+    Offset  Size    Description
+    0       4       "FATX" string (ASCII)
+    4       4       Volume ID (int)
+    8       4       Cluster size in (512 byte) sectors
+    12      2       Number of FAT copies
+    14      4       Unknown (always 0?)
+    18      4078    Unused
+    """
 
-	def __init__(self, sb, sector_size):
-		self.SECTOR_SIZE = sector_size
-		if(self.SUPERBLOCK_SIZE != len(sb)):
-			raise BaseException('SuperBlock is not '+ str(self.SUPERBLOCK_SIZE) +' bytes long')
-		self.name, self.volume, self.cluster_num, self.fatcopies = struct.unpack('<4sIIh4082x',sb)
-		try:
-			self.name = self.name.decode("ascii")
-		except UnicodeDecodeError:
-			raise BaseException("Can't decode 'FATX' signiture")
+    SUPERBLOCK_SIZE = 4096
 
-		self.cluster_size = self.cluster_num * self.SECTOR_SIZE
-		assert("FATX" == self.name)
-		assert(1 == self.fatcopies)
+    def __init__(self, sb, sector_size):
+        self.SECTOR_SIZE = sector_size
+        if self.SUPERBLOCK_SIZE != len(sb):
+            raise BaseException(
+                "SuperBlock is not " + str(self.SUPERBLOCK_SIZE) + " bytes long"
+            )
+        self.name, self.volume, self.cluster_num, self.fatcopies = struct.unpack(
+            "<4sIIh4082x", sb
+        )
+        try:
+            self.name = self.name.decode("ascii")
+        except UnicodeDecodeError:
+            raise BaseException("Can't decode 'FATX' signiture")
 
-	@classmethod
-	def new(cls, sector_size):
-		self = cls.__new__(cls)
-		self.SECTOR_SIZE = sector_size
-		self.name = "FATX"
-		self.volume = random.randint(0,0xFFFFFFFF)
-		self.cluster_num = 32
-		self.cluster_size = self.cluster_num * self.SECTOR_SIZE
-		self.fatcopies = 1
-		return self
+        self.cluster_size = self.cluster_num * self.SECTOR_SIZE
+        assert "FATX" == self.name
+        assert 1 == self.fatcopies
 
-	def pack(self):
-		return struct.pack('<4sIIh4082s', bytearray(self.name, 'ascii'),
-										 self.volume,
-										 self.cluster_num,
-										 self.fatcopies,
-										 4082*b'\xFF')
+    @classmethod
+    def new(cls, sector_size):
+        self = cls.__new__(cls)
+        self.SECTOR_SIZE = sector_size
+        self.name = "FATX"
+        self.volume = random.randint(0, 0xFFFFFFFF)
+        self.cluster_num = 32
+        self.cluster_size = self.cluster_num * self.SECTOR_SIZE
+        self.fatcopies = 1
+        return self
 
-	def __str__(self):
-		return self.name
+    def pack(self):
+        return struct.pack(
+            "<4sIIh4082s",
+            bytearray(self.name, "ascii"),
+            self.volume,
+            self.cluster_num,
+            self.fatcopies,
+            4082 * b"\xFF",
+        )
+
+    def __str__(self):
+        return self.name
 
 
 class EntryType(enum.Enum):
-	FATX_CLUSTER_AVAILABLE = 0
-	FATX_CLUSTER_RESERVED = 1
-	FATX_CLUSTER_BAD = 2
-	FATX_CLUSTER_DATA = 3
-	FATX_CLUSTER_END = 4
-	FATX_CLUSTER_START = 5
+    FATX_CLUSTER_AVAILABLE = 0
+    FATX_CLUSTER_RESERVED = 1
+    FATX_CLUSTER_BAD = 2
+    FATX_CLUSTER_DATA = 3
+    FATX_CLUSTER_END = 4
+    FATX_CLUSTER_START = 5
 
 
-class FAT():
-	"""
-	| 	0x0000		| This cluster is free for use 
-	| 	0x0001		| Usually used for recovery after crashes(unkown if used by the xbox) 
-	|0x0002 - 0xFFEF| This cluster is part of a chain and points to the next cluster 
-	|0xFFF0 - 0xFFF5| Reserved(unkown if used by the xbox) 
-	| 	0xfff7		| Bad sectors in this cluster - this cluster should not be used 
-	|0xfff8 - 0xffff| Marks the end of a cluster chain 
-	"""
+class FAT:
+    """
+    |   0x0000      | This cluster is free for use
+    |   0x0001      | Usually used for recovery after crashes(unkown if used by the xbox)
+    |0x0002 - 0xFFEF| This cluster is part of a chain and points to the next cluster
+    |0xFFF0 - 0xFFF5| Reserved(unkown if used by the xbox)
+    |   0xfff7      | Bad sectors in this cluster - this cluster should not be used
+    |0xfff8 - 0xffff| Marks the end of a cluster chain
+    """
 
-	def __init__(self, raw_clustermap):
-		self.f = raw_clustermap
-		# number of bytes per cluster entry
-		# usually 2(FATX16) or 4(FATX32) bytes
-		self.size = 2 if len(raw_clustermap) < (0xfff5 * 2) else 4
-		self.clustermap = []
+    def __init__(self, raw_clustermap):
+        self.f = raw_clustermap
+        # number of bytes per cluster entry
+        # usually 2(FATX16) or 4(FATX32) bytes
+        self.size = 2 if len(raw_clustermap) < (0xFFF5 * 2) else 4
+        self.clustermap = []
 
-		# ToDo use memory view for zerocopy magic
-		# slice up the fat table
-		while len(self.f) > 0:
-			entry = int.from_bytes(self.f[:self.size], 'little')
-			self.f = self.f[self.size:]
-			self.clustermap.append(entry)
+        # ToDo use memory view for zerocopy magic
+        # slice up the fat table
+        while len(self.f) > 0:
+            entry = int.from_bytes(self.f[: self.size], "little")
+            self.f = self.f[self.size :]
+            self.clustermap.append(entry)
 
-		if self.size == 2:
-			assert(0xFFF8 == self.clustermap[0])
-		else:
-			assert(0xFFFFFFF8 == self.clustermap[0])
+        if self.size == 2:
+            assert 0xFFF8 == self.clustermap[0]
+        else:
+            assert 0xFFFFFFF8 == self.clustermap[0]
 
-	def numberClusters(self):
-		return len(self.clustermap)
+    def numberClusters(self):
+        return len(self.clustermap)
 
-	def getEntryType(self, entry):
-		if entry == 0x0000:
-			return EntryType.FATX_CLUSTER_AVAILABLE
-		if entry == 0x0001:
-			return EntryType.FATX_CLUSTER_RESERVED
-		if self.size == 2:
-			if entry == 0xFFF7:
-				return EntryType.FATX_CLUSTER_BAD
-			if entry > 0xFFF7:
-				return EntryType.FATX_CLUSTER_END
-		else:
-			if entry == 0xFFFFFFF7:
-				return EntryType.FATX_CLUSTER_BAD
-			if entry > 0xFFFFFFF7:
-				return EntryType.FATX_CLUSTER_END
-		return EntryType.FATX_CLUSTER_DATA
+    def getEntryType(self, entry):
+        if entry == 0x0000:
+            return EntryType.FATX_CLUSTER_AVAILABLE
+        if entry == 0x0001:
+            return EntryType.FATX_CLUSTER_RESERVED
+        if self.size == 2:
+            if entry == 0xFFF7:
+                return EntryType.FATX_CLUSTER_BAD
+            if entry > 0xFFF7:
+                return EntryType.FATX_CLUSTER_END
+        else:
+            if entry == 0xFFFFFFF7:
+                return EntryType.FATX_CLUSTER_BAD
+            if entry > 0xFFFFFFF7:
+                return EntryType.FATX_CLUSTER_END
+        return EntryType.FATX_CLUSTER_DATA
 
-	# Warning: Ugly code ahead!
-	# set an entry in the FAT to either a special type or pointer
-	def setEntryType(self, pos, entrytype):
-		if self.size == 2:
-			if entrytype == EntryType.FATX_CLUSTER_AVAILABLE:
-				t = 0x0000
-			elif entrytype == EntryType.FATX_CLUSTER_RESERVED:
-				t = 0x0001
-			elif entrytype == EntryType.FATX_CLUSTER_BAD:
-				t = 0xFFF7
-			elif entrytype == EntryType.FATX_CLUSTER_END:
-				t = 0xFFFF
-			else:
-				# Just to be sure nobody is being stupid
-				assert(self.getEntryType(self.clustermap[pos]) == EntryType.FATX_CLUSTER_AVAILABLE)
-				t = entrytype
-		if self.size == 4:
-			if entrytype == EntryType.FATX_CLUSTER_AVAILABLE:
-				t = 0x00000000
-			elif entrytype == EntryType.FATX_CLUSTER_RESERVED:
-				t = 0x00000001
-			elif entrytype == EntryType.FATX_CLUSTER_BAD:
-				t = 0xFFFFFFF7
-			elif entrytype == EntryType.FATX_CLUSTER_END:
-				t = 0xFFFFFFFF
-			else:
-				# Just to be sure nobody is being stupid
-				assert(self.getEntryType(self.clustermap[pos]) == EntryType.FATX_CLUSTER_AVAILABLE)
-				t = entrytype
-		self.clustermap[pos] = t
+    # Warning: Ugly code ahead!
+    # set an entry in the FAT to either a special type or pointer
+    def setEntryType(self, pos, entrytype):
+        if self.size == 2:
+            if entrytype == EntryType.FATX_CLUSTER_AVAILABLE:
+                t = 0x0000
+            elif entrytype == EntryType.FATX_CLUSTER_RESERVED:
+                t = 0x0001
+            elif entrytype == EntryType.FATX_CLUSTER_BAD:
+                t = 0xFFF7
+            elif entrytype == EntryType.FATX_CLUSTER_END:
+                t = 0xFFFF
+            else:
+                # Just to be sure nobody is being stupid
+                assert (
+                    self.getEntryType(self.clustermap[pos])
+                    == EntryType.FATX_CLUSTER_AVAILABLE
+                )
+                t = entrytype
+        if self.size == 4:
+            if entrytype == EntryType.FATX_CLUSTER_AVAILABLE:
+                t = 0x00000000
+            elif entrytype == EntryType.FATX_CLUSTER_RESERVED:
+                t = 0x00000001
+            elif entrytype == EntryType.FATX_CLUSTER_BAD:
+                t = 0xFFFFFFF7
+            elif entrytype == EntryType.FATX_CLUSTER_END:
+                t = 0xFFFFFFFF
+            else:
+                # Just to be sure nobody is being stupid
+                assert (
+                    self.getEntryType(self.clustermap[pos])
+                    == EntryType.FATX_CLUSTER_AVAILABLE
+                )
+                t = entrytype
+        self.clustermap[pos] = t
 
-	# collects the IDs/No. of clusters of a chain of a given start cluster 
-	def clusterChain(self, pointer):
-		l = []
-		l.append(pointer)
+    # collects the IDs/No. of clusters of a chain of a given start cluster
+    def clusterChain(self, pointer):
+        l = []
+        l.append(pointer)
 
-		# Your first pointer should always point to either the next 
-		# clusterchain element or mark the end of a chain
-		nvalue = self.getEntryType(self.clustermap[pointer])
-		if nvalue not in [EntryType.FATX_CLUSTER_DATA, EntryType.FATX_CLUSTER_END]:
-			raise ValueError("Start cluster is not part of a chain")
+        # Your first pointer should always point to either the next
+        # clusterchain element or mark the end of a chain
+        nvalue = self.getEntryType(self.clustermap[pointer])
+        if nvalue not in [EntryType.FATX_CLUSTER_DATA, EntryType.FATX_CLUSTER_END]:
+            raise ValueError("Start cluster is not part of a chain")
 
-		# We are not at the end of the chain
-		while nvalue != EntryType.FATX_CLUSTER_END:
-			# get the next pointer
-			pointer = self.clustermap[pointer]
-			l.append(pointer)
-			# lookup the pointer, so we can check if it is the end of the chain
-			nvalue = self.getEntryType(self.clustermap[pointer])
-			if nvalue in [EntryType.FATX_CLUSTER_BAD, EntryType.FATX_CLUSTER_RESERVED, EntryType.FATX_CLUSTER_AVAILABLE]:
-				raise SystemError("One chain element is invalid", nvalue)
-		return l
+        # We are not at the end of the chain
+        while nvalue != EntryType.FATX_CLUSTER_END:
+            # get the next pointer
+            pointer = self.clustermap[pointer]
+            l.append(pointer)
+            # lookup the pointer, so we can check if it is the end of the chain
+            nvalue = self.getEntryType(self.clustermap[pointer])
+            if nvalue in [
+                EntryType.FATX_CLUSTER_BAD,
+                EntryType.FATX_CLUSTER_RESERVED,
+                EntryType.FATX_CLUSTER_AVAILABLE,
+            ]:
+                raise SystemError("One chain element is invalid", nvalue)
+        return l
 
-	# frees a given chain, setting all cluster free
-	def freeClusterChain(self, chain: List[int]):
-		for cluster in chain:
-			self.setEntryType(cluster, EntryType.FATX_CLUSTER_AVAILABLE)
+    # frees a given chain, setting all cluster free
+    def freeClusterChain(self, chain: List[int]):
+        for cluster in chain:
+            self.setEntryType(cluster, EntryType.FATX_CLUSTER_AVAILABLE)
 
-	# collects a list of IDs/No. of clusters that are free
-	def getFreeClusterChain(self, nclusters):
-		# l shall store the list of free clusters
-		l = []
-		pos = 1
-		for i in range(nclusters):
-			# Dirty, FIXME!				   MagicValue :(
-			l.append(self.clustermap.index(0x0000, pos))
-			pos = l[-1]+1
-		return l
+    # collects a list of IDs/No. of clusters that are free
+    def getFreeClusterChain(self, nclusters):
+        # l shall store the list of free clusters
+        l = []
+        pos = 1
+        for i in range(nclusters):
+            # Dirty, FIXME!                MagicValue :(
+            l.append(self.clustermap.index(0x0000, pos))
+            pos = l[-1] + 1
+        return l
 
-	# links a number of clusters together and terminates the list
-	def linkClusterChain(self, cc):
-		clusterchain = cc.copy()
-		index = clusterchain.pop(0)
-		while len(clusterchain) > 0:
-			pointer = clusterchain.pop(0)
-			self.setEntryType(index, pointer)
-			index = pointer
-		self.setEntryType(index, EntryType.FATX_CLUSTER_END)
+    # links a number of clusters together and terminates the list
+    def linkClusterChain(self, cc):
+        clusterchain = cc.copy()
+        index = clusterchain.pop(0)
+        while len(clusterchain) > 0:
+            pointer = clusterchain.pop(0)
+            self.setEntryType(index, pointer)
+            index = pointer
+        self.setEntryType(index, EntryType.FATX_CLUSTER_END)
 
-	@classmethod
-	def new(cls, size):
-		self = cls(size*b'\x00')
-		if self.size == 2:
-			self.clustermap[0] = 0xFFF8
-			self.clustermap[1] = 0xFFFF
-		else:
-			self.clustermap[0] = 0xFFFFFFF8
-			self.clustermap[1] = 0xFFFFFFFF
-		return self
+    @classmethod
+    def new(cls, size):
+        self = cls(size * b"\x00")
+        if self.size == 2:
+            self.clustermap[0] = 0xFFF8
+            self.clustermap[1] = 0xFFFF
+        else:
+            self.clustermap[0] = 0xFFFFFFF8
+            self.clustermap[1] = 0xFFFFFFFF
+        return self
 
-	def pack(self):
-		data = b''
-		if self.size == 2:
-			datatype = '<H'
-		else:
-			datatype = '<I'
-		for i in self.clustermap:
-			data += struct.pack(datatype, i)
-		if len(data) % 4096:
-			data += (4096 - len(data) % 4096)*b'\x00'
-		return data
+    def pack(self):
+        data = b""
+        if self.size == 2:
+            datatype = "<H"
+        else:
+            datatype = "<I"
+        for i in self.clustermap:
+            data += struct.pack(datatype, i)
+        if len(data) % 4096:
+            data += (4096 - len(data) % 4096) * b"\x00"
+        return data
 
-	def __str__(self):
-		return "FAT: {0} entrys of {1} bytes each".format(self.numberClusters(), self.size)
-
-
-class DirectoryEntry():
-	""" 
-	DirectoryEntry, byte representation
-	Offset	Size	Description
-	0		1		Size of filename (max. 42)
-	1		1		Attribute as on FAT
-	2		42		Filename in ASCII, padded with 0xff (not zero-terminated)
-	44		4		First cluster
-	48		4		File size in bytes
-	52		2		Modification time
-	54		2		Modification date
-	56		2		Creation time
-	58		2		Creation date
-	60		2		Last access time
-	62		2		Last access date
-	"""
-	DIRECTORY_SIZE = 64
-
-	"""
-	Attributes, byte values/mask
-	0x01 - Indicates that the file is read only.
-	0x02 - Indicates a hidden file. Such files can be displayed if it is really required.
-	0x04 - Indicates a system file. These are hidden as well.
-	0x08 - Indicates a special entry containing the disk's volume label, instead of describing a file. This kind of entry appears only in the root directory.
-	0x10 - The entry describes a subdirectory.
-	0x20 - This is the archive flag. This can be set and cleared by the programmer or user, but is always set when the file is modified. It is used by backup programs.
-	0x40 - Not used; must be set to 0.
-	0x80 - Not used; must be set to 0.
-	"""
-	ATR_READONLY = 0x01
-	ATR_HIDDEN = 0x02
-	ATR_SYSTEM = 0x04
-	ATR_VOLUMELABEL = 0x08
-	ATR_DIRECTORY = 0x10
-	ATR_ARCHIVE = 0x20
-
-	# ToDo: Add pack method
-	class Attributes():
-		def __init__(self):
-			self.READONLY = False
-			self.HIDDEN = False
-			self.SYSTEM = False
-			self.VOLUMELABEL = False
-			self.DIRECTORY = False
-			self.ARCHIVE = False
-			self.DELETED = False
+    def __str__(self):
+        return "FAT: {0} entrys of {1} bytes each".format(
+            self.numberClusters(), self.size
+        )
 
 
-	def __init__(self, d, origin):
-		# Size of the name
-		self.namesize = 0
-		# The name(all 42 bytes)
-		self.name = 0
-		# the cluster number where the file/directory is saved 
-		self.cluster = 1
-		# size of file
-		self.size = 0
-		# The name in ascii (less or equal to 42 bytes)
-		self.filename = ""
-		# DirectoryEntryList where this DirectoryEntry was read from
-		self.origin = origin
-		self.atr = self.Attributes()
+class DirectoryEntry:
+    """
+    DirectoryEntry, byte representation
+    Offset  Size    Description
+    0       1       Size of filename (max. 42)
+    1       1       Attribute as on FAT
+    2       42      Filename in ASCII, padded with 0xff (not zero-terminated)
+    44      4       First cluster
+    48      4       File size in bytes
+    52      2       Modification time
+    54      2       Modification date
+    56      2       Creation time
+    58      2       Creation date
+    60      2       Last access time
+    62      2       Last access date
+    """
 
-		if(self.DIRECTORY_SIZE != len(d)):
-			raise ValueError('Directory is '+str(len(d))+' bytes long. Expected '+ str(self.DIRECTORY_SIZE) +' bytes.')
-		raw = struct.unpack('<BB42sII12x',d)
-		self.namesize = raw[0]
+    DIRECTORY_SIZE = 64
 
-		# This is not a real entry, it may mark the end of the entry list
-		if 0xFF == self.namesize or 0x00 == self.namesize:
-			raise SystemError("Invalid directory entry")
+    """
+    Attributes, byte values/mask
+    0x01 - Indicates that the file is read only.
+    0x02 - Indicates a hidden file. Such files can be displayed if it is really required.
+    0x04 - Indicates a system file. These are hidden as well.
+    0x08 - Indicates a special entry containing the disk's volume label,
+           instead of describing a file. This kind of entry appears only in the root directory.
+    0x10 - The entry describes a subdirectory.
+    0x20 - This is the archive flag. This can be set and cleared bythe programmer
+           or user, but is always set when the file is modified. It is used by backup programs.
+    0x40 - Not used; must be set to 0.
+    0x80 - Not used; must be set to 0.
+    """
+    ATR_READONLY = 0x01
+    ATR_HIDDEN = 0x02
+    ATR_SYSTEM = 0x04
+    ATR_VOLUMELABEL = 0x08
+    ATR_DIRECTORY = 0x10
+    ATR_ARCHIVE = 0x20
 
-		# This file is deleted(but we will try to recover the name a bit)
-		if 0xE5 == self.namesize:
-			self.atr.DELETED = True
-			self.namesize = 42
+    # ToDo: Add pack method
+    class Attributes:
+        def __init__(self):
+            self.READONLY = False
+            self.HIDDEN = False
+            self.SYSTEM = False
+            self.VOLUMELABEL = False
+            self.DIRECTORY = False
+            self.ARCHIVE = False
+            self.DELETED = False
 
-		# The size of a name cannot exceed the actual byte length of the name field
-		if(42 < self.namesize):
-			raise SystemError("Namesize is longer("+hex(self.namesize)+")then max length("+hex(42)+").")
+    def __init__(self, d, origin):
+        # Size of the name
+        self.namesize = 0
+        # The name(all 42 bytes)
+        self.name = 0
+        # the cluster number where the file/directory is saved
+        self.cluster = 1
+        # size of file
+        self.size = 0
+        # The name in ascii (less or equal to 42 bytes)
+        self.filename = ""
+        # DirectoryEntryList where this DirectoryEntry was read from
+        self.origin = origin
+        self.atr = self.Attributes()
 
-		self.attributes = raw[1]
-		self.name = raw[2]
-		self.cluster = raw[3] # first cluster of the file
-		self.size = raw[4]
-		self.atr.READONLY = bool(self.attributes & self.ATR_READONLY)
-		self.atr.HIDDEN = bool(self.attributes & self.ATR_HIDDEN)
-		self.atr.SYSTEM = bool(self.attributes & self.ATR_SYSTEM)
-		self.atr.VOLUMELABEL = bool(self.attributes & self.ATR_VOLUMELABEL)
-		self.atr.DIRECTORY = bool(self.attributes & self.ATR_DIRECTORY)
-		self.atr.ARCHIVE = bool(self.attributes & self.ATR_ARCHIVE)
-		self.filename = "".join([chr(i) for i in self.name[:self.namesize] if i > 0x1F and i < 0x7F])
+        if self.DIRECTORY_SIZE != len(d):
+            raise ValueError(
+                "Directory is "
+                + str(len(d))
+                + " bytes long. Expected "
+                + str(self.DIRECTORY_SIZE)
+                + " bytes."
+            )
+        raw = struct.unpack("<BB42sII12x", d)
+        self.namesize = raw[0]
 
-	def rename(self, name):
-		if len(name) > 42:
-			raise ValueError('Name is to long (max 42 character)')
-		self.name = bytearray(name, 'ascii')+((42-len(name))*b'\xFF')
-		self.filename = name
-		self.namesize = len(name)
+        # This is not a real entry, it may mark the end of the entry list
+        if 0xFF == self.namesize or 0x00 == self.namesize:
+            raise SystemError("Invalid directory entry")
 
-	def pack(self):
-		def set_bit(boolvalue, bit):
-			if boolvalue:
-				return bit
-			return 0
-		self.attributes = 0
-		self.attributes |= set_bit(self.atr.READONLY, self.ATR_READONLY)
-		self.attributes |= set_bit(self.atr.HIDDEN, self.ATR_HIDDEN)
-		self.attributes |= set_bit(self.atr.SYSTEM, self.ATR_SYSTEM)
-		self.attributes |= set_bit(self.atr.VOLUMELABEL, self.ATR_VOLUMELABEL)
-		self.attributes |= set_bit(self.atr.DIRECTORY, self.ATR_DIRECTORY)
-		self.attributes |= set_bit(self.atr.ARCHIVE, self.ATR_ARCHIVE)
-		if self.atr.DELETED:
-			self.namesize = 0xE5
-		raw = struct.pack('<BB42sII12x', self.namesize,
-										self.attributes,
-										self.name,
-										self.cluster,
-										self.size)
-		return raw
+        # This file is deleted(but we will try to recover the name a bit)
+        if 0xE5 == self.namesize:
+            self.atr.DELETED = True
+            self.namesize = 42
 
-	# ToDo: switch into to functions for either file or directory
-	@classmethod
-	def new_entry(cls, name: str, origin):
-		self = cls.__new__(cls)
-		try:
-			self.rename(name)
-		except ValueError as e:
-			raise e
-		self.cluster = 0
-		self.origin = origin
-		self.size = 0
-		self.atr = self.Attributes()
-		return self
+        # The size of a name cannot exceed the actual byte length of the name field
+        if 42 < self.namesize:
+            raise SystemError(
+                "Namesize is longer("
+                + hex(self.namesize)
+                + ")then max length("
+                + hex(42)
+                + ")."
+            )
 
-	def __str__(self):
-		return self.filename
+        self.attributes = raw[1]
+        self.name = raw[2]
+        self.cluster = raw[3]  # first cluster of the file
+        self.size = raw[4]
+        self.atr.READONLY = bool(self.attributes & self.ATR_READONLY)
+        self.atr.HIDDEN = bool(self.attributes & self.ATR_HIDDEN)
+        self.atr.SYSTEM = bool(self.attributes & self.ATR_SYSTEM)
+        self.atr.VOLUMELABEL = bool(self.attributes & self.ATR_VOLUMELABEL)
+        self.atr.DIRECTORY = bool(self.attributes & self.ATR_DIRECTORY)
+        self.atr.ARCHIVE = bool(self.attributes & self.ATR_ARCHIVE)
+        self.filename = "".join(
+            [chr(i) for i in self.name[: self.namesize] if i > 0x1F and i < 0x7F]
+        )
+
+    def rename(self, name):
+        if len(name) > 42:
+            raise ValueError("Name is to long (max 42 character)")
+        self.name = bytearray(name, "ascii") + ((42 - len(name)) * b"\xFF")
+        self.filename = name
+        self.namesize = len(name)
+
+    def pack(self):
+        def set_bit(boolvalue, bit):
+            if boolvalue:
+                return bit
+            return 0
+
+        self.attributes = 0
+        self.attributes |= set_bit(self.atr.READONLY, self.ATR_READONLY)
+        self.attributes |= set_bit(self.atr.HIDDEN, self.ATR_HIDDEN)
+        self.attributes |= set_bit(self.atr.SYSTEM, self.ATR_SYSTEM)
+        self.attributes |= set_bit(self.atr.VOLUMELABEL, self.ATR_VOLUMELABEL)
+        self.attributes |= set_bit(self.atr.DIRECTORY, self.ATR_DIRECTORY)
+        self.attributes |= set_bit(self.atr.ARCHIVE, self.ATR_ARCHIVE)
+        if self.atr.DELETED:
+            self.namesize = 0xE5
+        raw = struct.pack(
+            "<BB42sII12x",
+            self.namesize,
+            self.attributes,
+            self.name,
+            self.cluster,
+            self.size,
+        )
+        return raw
+
+    # ToDo: switch into to functions for either file or directory
+    @classmethod
+    def new_entry(cls, name: str, origin):
+        self = cls.__new__(cls)
+        try:
+            self.rename(name)
+        except ValueError as e:
+            raise e
+        self.cluster = 0
+        self.origin = origin
+        self.size = 0
+        self.atr = self.Attributes()
+        return self
+
+    def __str__(self):
+        return self.filename
 
 
-class DirectoryEntryList():
-	# Cluster is the raw binary block containing one ore more DirectoryEntrys
-	# ToDo: use memoryview and aim for zero-copy
-	def __init__(self, data, clusterID: int):
-		self.cluster = clusterID
-		self._l = []
+class DirectoryEntryList:
+    # Cluster is the raw binary block containing one ore more DirectoryEntrys
+    # ToDo: use memoryview and aim for zero-copy
+    def __init__(self, data, clusterID: int):
+        self.cluster = clusterID
+        self._l = []
 
-		if len(data) % 64 != 0:
-			raise ValueError("Invalid datasize")
+        if len(data) % 64 != 0:
+            raise ValueError("Invalid datasize")
 
-		for offset in range(0, len(data), DirectoryEntry.DIRECTORY_SIZE):
-			if data[offset] == 0xFF:
-				data = data[:offset]
-				break
-			if data[offset] == 0x00:
-				data = data[:offset]
-				break
-		else:
-			# in case break wasn't tiggerd
-			raise SystemError("Missing termination of directory entry list")
+        for offset in range(0, len(data), DirectoryEntry.DIRECTORY_SIZE):
+            if data[offset] == 0xFF:
+                data = data[:offset]
+                break
+            if data[offset] == 0x00:
+                data = data[:offset]
+                break
+        else:
+            # in case break wasn't tiggerd
+            raise SystemError("Missing termination of directory entry list")
 
-		for offset in range(0, len(data), 64):
-			try:
-				de = DirectoryEntry(data[offset:offset+DirectoryEntry.DIRECTORY_SIZE], self)
-				self._l.append(de)
-			except ValueError as e:
-				# I messed up
-				raise e
-			except SystemError as e:
-				# The filesystem messed up
-				raise e
+        for offset in range(0, len(data), 64):
+            try:
+                de = DirectoryEntry(
+                    data[offset : offset + DirectoryEntry.DIRECTORY_SIZE], self
+                )
+                self._l.append(de)
+            except ValueError as e:
+                # I messed up
+                raise e
+            except SystemError as e:
+                # The filesystem messed up
+                raise e
 
-	def list(self):
-		return self._l
+    def list(self):
+        return self._l
 
-	def append(self, directoryentry):
-		if len(self._l) > 254:
-			raise ValueError("Not more then 255 entries allowed in a single directory")
-		for i in self._l:
-			if i.filename == directoryentry.filename:
-				break
-		else:
-			self._l.append(directoryentry)
-			return
-		raise ValueError(directoryentry.filename+" already exists")
+    def append(self, directoryentry):
+        if len(self._l) > 254:
+            raise ValueError("Not more then 255 entries allowed in a single directory")
+        for i in self._l:
+            if i.filename == directoryentry.filename:
+                break
+        else:
+            self._l.append(directoryentry)
+            return
+        raise ValueError(directoryentry.filename + " already exists")
 
-	def pack(self):
-		data = b''
-		for i in self._l:
-			data += i.pack()
-		data += b'\xFF'*DirectoryEntry.DIRECTORY_SIZE
-		return data
-
-	
+    def pack(self):
+        data = b""
+        for i in self._l:
+            data += i.pack()
+        data += b"\xFF" * DirectoryEntry.DIRECTORY_SIZE
+        return data
