@@ -119,13 +119,20 @@ audio.import_file("newAudio.wav", f.read())
 f.close()
 ```
 
-Renaming is done with the `rename()` method (obviously)
+Renaming is done with the `rename()` method (obviously).
 ```python
 newFile = audio.get('newAudio.wav')
 newFile.rename('oldAudio.wav')
 ```
 
+Inorder to delete a file, use the `delete()` method.
+At the moment, only 'soft' deletion is supported, where the data remains on the disk but the file is marked as deleted. You can see such files with `ls(deleted=True)`.
+```python
+audio.get('oldAudio.wav').delete()
+audio.ls(deleted=True)
+```
+
 The `parent()` method always returns the upper directory. If you call it on your root object, it returns itself.
 ```python
-audio.ls() == newFile.parent().ls() 
+audio.ls() == newFile.parent().ls()
 ```
