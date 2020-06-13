@@ -24,9 +24,14 @@ class SuperBlock:
             raise BaseException(
                 "SuperBlock is not " + str(self.SUPERBLOCK_SIZE) + " bytes long"
             )
-        self.name, self.volume, self.cluster_num, self.fatcopies = struct.unpack(
-            "<4sIIh4082x", sb
-        )
+
+        (
+            self.name,
+            self.volume,
+            self.cluster_num,
+            self.fatcopies,
+            self.padding,
+        ) = struct.unpack("<4sIIh4082s", sb)
         try:
             self.name = self.name.decode("ascii")
         except UnicodeDecodeError:
@@ -45,6 +50,7 @@ class SuperBlock:
         self.cluster_num = 32
         self.cluster_size = self.cluster_num * self.SECTOR_SIZE
         self.fatcopies = 1
+        self.padding = 4082*b'\xFF'
         return self
 
     def pack(self):
@@ -54,7 +60,7 @@ class SuperBlock:
             self.volume,
             self.cluster_num,
             self.fatcopies,
-            4082 * b"\xFF",
+            self.padding,
         )
 
     def __str__(self):
@@ -91,7 +97,7 @@ class FAT:
         # slice up the fat table
         while len(self.f) > 0:
             entry = int.from_bytes(self.f[: self.size], "little")
-            self.f = self.f[self.size :]
+            self.f = self.f[self.size:]
             self.clustermap.append(entry)
 
         if self.size == 2:
@@ -209,8 +215,10 @@ class FAT:
         self.setEntryType(index, EntryType.FATX_CLUSTER_END)
 
     @classmethod
-    def new(cls, size):
-        self = cls(size * b"\x00")
+    def new(cls, fat_size: int):
+        self = cls.__new__(cls)
+        self.size = 2 if fat_size < (0xFFF5 * 2) else 4
+        self.clustermap = [0x0000] * (fat_size // self.size)
         if self.size == 2:
             self.clustermap[0] = 0xFFF8
             self.clustermap[1] = 0xFFFF

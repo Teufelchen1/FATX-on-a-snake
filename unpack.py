@@ -56,3 +56,10 @@ if __name__ == "__main__":
     root = fs.root
     os.chdir(dest)
     print("Unpacked {0} files.".format(walkfs(root)))
+    os.mkdir(".FATX-on-a-snake")
+    os.chdir(".FATX-on-a-snake")
+    f = open("superblock.bin", "wb")
+    f.write(fs.sb.pack())
+    f.close()
+    print("Saved superblock as {0}/{1}/{2}".format(
+        dest, ".FATX-on-a-snake", "superblock.bin"))

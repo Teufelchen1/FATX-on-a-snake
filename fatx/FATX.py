@@ -45,11 +45,15 @@ class Filesystem:
         self.root = RootObject(DirectoryEntryList(cluster, 1))
 
     @classmethod
-    def new(cls, size: int, file: str, sector_size: int = 512):
+    def new(cls, size: int, file: str, sector_size: int = 512, sb: bytes = None):
         self = cls.__new__(cls)
         self.f = open(file, "w+b")
 
-        self.sb = SuperBlock.new(sector_size)
+        if sb:
+            self.sb = SuperBlock(sb, sector_size)
+            print("Yupp found old superblock")
+        else:
+            self.sb = SuperBlock.new(sector_size)
         self.fat_size = self._calc_fat_size(size, self.sb.cluster_size)
         self.fat = FAT.new(self.fat_size)
         root_dl = DirectoryEntryList(b"\xFF" * 64, 1)

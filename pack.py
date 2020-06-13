@@ -4,6 +4,17 @@ import argparse
 from fatx import FATX
 
 
+def check_for_superblock(path):
+    # check if a superblock is given, if so, prepare to re-import it
+    path = os.path.join(path, ".FATX-on-a-snake/superblock.bin")
+    if os.path.exists(path):
+        with open(path, 'rb') as f:
+            sb = f.read()
+            return sb
+    else:
+        return None
+
+
 def walkfs(fs):
     with os.scandir(".") as it:
         for entry in it:
@@ -11,10 +22,11 @@ def walkfs(fs):
                 with open(entry.name, "rb") as f:
                     fs.import_file(entry.name, f.read())
             else:
-                fs.create_dir(entry.name)
-                os.chdir(entry.name)
-                walkfs(fs.get(entry.name))
-                os.chdir("..")
+                if entry.name != ".FATX-on-a-snake":
+                    fs.create_dir(entry.name)
+                    os.chdir(entry.name)
+                    walkfs(fs.get(entry.name))
+                    os.chdir("..")
 
 
 if __name__ == "__main__":
@@ -48,12 +60,15 @@ if __name__ == "__main__":
     size = args.size
     src = args.src[0]
     file = args.image[0]
+    sb = None
+    FATX.READ_ONLY = False
+
     if not os.path.isdir(src):
         sys.exit("Fatal: src-dir is not a valid directory")
     if os.path.exists(file):
         sys.exit("Fatal: target file already exists")
 
-    FATX.READ_ONLY = False
-    fs = FATX.Filesystem.new(size, file, args.sector_size)
+    sb = check_for_superblock(src)
+    fs = FATX.Filesystem.new(size, file, args.sector_size, sb)
     os.chdir(src)
     walkfs(fs.root)
