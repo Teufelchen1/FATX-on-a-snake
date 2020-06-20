@@ -33,6 +33,12 @@ if __name__ == "__main__":
         help="sector size used for this image(default: 512)",
     )
     parser.add_argument(
+        "--export-superblock",
+        dest="export_superblock",
+        type=str,
+        help="destination directory for the superblock export",
+    )
+    parser.add_argument(
         dest="image", type=str, nargs=1, action="store", help="an FATX filesystem image"
     )
     parser.add_argument(
@@ -51,15 +57,22 @@ if __name__ == "__main__":
     if not os.path.isfile(file):
         sys.exit("Fatal: fatx-image is not a valid file")
 
-    fs = FATX.Filesystem(file)
+    fs = FATX.Filesystem(file, args.sector_size)
     fs.status()
+
+    if args.export_superblock:
+        try:
+            head, tail = os.path.split(args.export_superblock)
+            if tail == "":
+                f = open(os.path.join(head, "superblock.bin"), "wb")
+            else:
+                f = open(args.save_superblock, "wb")
+            f.write(fs.sb.pack())
+            print("Exported the superblock into {0}".format(f.name))
+            f.close()
+        except Exception as e:
+            sys.exit("Fatal: could not export the superblock: " + str(e))
+
     root = fs.root
     os.chdir(dest)
     print("Unpacked {0} files.".format(walkfs(root)))
-    os.mkdir(".FATX-on-a-snake")
-    os.chdir(".FATX-on-a-snake")
-    f = open("superblock.bin", "wb")
-    f.write(fs.sb.pack())
-    f.close()
-    print("Saved superblock as {0}/{1}/{2}".format(
-        dest, ".FATX-on-a-snake", "superblock.bin"))

@@ -4,29 +4,21 @@ import argparse
 from fatx import FATX
 
 
-def check_for_superblock(path):
-    # check if a superblock is given, if so, prepare to re-import it
-    path = os.path.join(path, ".FATX-on-a-snake/superblock.bin")
-    if os.path.exists(path):
-        with open(path, 'rb') as f:
-            sb = f.read()
-            return sb
-    else:
-        return None
-
-
 def walkfs(fs):
+    count = 0
     with os.scandir(".") as it:
         for entry in it:
             if entry.is_file():
                 with open(entry.name, "rb") as f:
                     fs.import_file(entry.name, f.read())
+                    count += 1
             else:
                 if entry.name != ".FATX-on-a-snake":
                     fs.create_dir(entry.name)
                     os.chdir(entry.name)
-                    walkfs(fs.get(entry.name))
+                    count += walkfs(fs.get(entry.name))
                     os.chdir("..")
+    return count
 
 
 if __name__ == "__main__":
@@ -39,6 +31,12 @@ if __name__ == "__main__":
         default=512,
         type=int,
         help="sector size used for this image(default: 512)",
+    )
+    parser.add_argument(
+        "--import-superblock",
+        dest="import_superblock",
+        type=str,
+        help="path to an already existant superblock to use in the new image",
     )
     parser.add_argument(dest="size", type=int, help="size of the new partition")
     parser.add_argument(
@@ -68,7 +66,14 @@ if __name__ == "__main__":
     if os.path.exists(file):
         sys.exit("Fatal: target file already exists")
 
-    sb = check_for_superblock(src)
+    if args.import_superblock:
+        try:
+            f = open(args.import_superblock, "rb")
+            sb = f.read()
+            f.close()
+        except Exception as e:
+            sys.exit("Fatal: could not read the superblock: " + str(e))
+
     fs = FATX.Filesystem.new(size, file, args.sector_size, sb)
     os.chdir(src)
-    walkfs(fs.root)
+    print("Packed {0} files into {1}.".format(walkfs(fs.root), file))

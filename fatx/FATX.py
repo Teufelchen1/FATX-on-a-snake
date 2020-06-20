@@ -51,7 +51,6 @@ class Filesystem:
 
         if sb:
             self.sb = SuperBlock(sb, sector_size)
-            print("Yupp found old superblock")
         else:
             self.sb = SuperBlock.new(sector_size)
         self.fat_size = self._calc_fat_size(size, self.sb.cluster_size)
