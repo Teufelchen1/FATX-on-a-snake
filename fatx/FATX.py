@@ -1,3 +1,4 @@
+import io
 import os
 import math
 from .blocks import SuperBlock, FAT, DirectoryEntry, DirectoryEntryList
@@ -29,11 +30,29 @@ def writing_warning(func):
 
 
 class Filesystem:
-    def __init__(self, file: str, sector_size: int = 512):
-        self.f = open(file, "r+b")
+    class FileWrapper(io.FileIO):
+        def __init__(self, file: str, mode: str = 'r', offset: int = 0, size: int = 0):
+            super().__init__(file, mode)
+            super().seek(offset)
+            self._offset = offset
+            if size == 0:
+                size = os.stat(file).st_size
+            self.size = size
+
+        # dumb: this seek does not allow relative seeking
+        def seek(self, offset: int, whence: int = 0):
+            # Not allowed to go 'behind' the start of the file
+            assert(self.tell()+offset > self._offset)
+            # Not allowed to go 'behind' the end of the file
+            if self._offset+offset > self._offset+self.size:
+                raise EOFError()
+            super().seek(offset+self._offset, whence)
+
+    def __init__(self, file: str, sector_size: int = 512, offset: int = 0, size: int = 0):
+        self.f = self.FileWrapper(file, "r+b", offset, size)
         self.sb = SuperBlock(self.f.read(SuperBlock.SUPERBLOCK_SIZE), sector_size)
 
-        self.fat_size = self._calc_fat_size(os.stat(file).st_size, self.sb.cluster_size)
+        self.fat_size = self._calc_fat_size(self.f.size, self.sb.cluster_size)
         self.fat = FAT(self.f.read(self.fat_size))
 
         # Sadly, sometimes the interfaces need to access the filesystem
@@ -45,9 +64,9 @@ class Filesystem:
         self.root = RootObject(DirectoryEntryList(cluster, 1))
 
     @classmethod
-    def new(cls, size: int, file: str, sector_size: int = 512):
+    def new(cls, size: int, file: str, sector_size: int = 512, offset: int = 0):
         self = cls.__new__(cls)
-        self.f = open(file, "w+b")
+        self.f = self.FileWrapper(file, "w+b", offset, size)
 
         self.sb = SuperBlock.new(sector_size)
         self.fat_size = self._calc_fat_size(size, self.sb.cluster_size)

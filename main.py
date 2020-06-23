@@ -22,11 +22,25 @@ if __name__ == "__main__":
         help="sector size used for this image(default: 512)",
     )
     parser.add_argument(
+        "--offset",
+        dest="offset",
+        default=0,
+        type=int,
+        help="offset for the start of the partition",
+    )
+    parser.add_argument(
+        "--partition-size",
+        dest="size",
+        default=0,
+        type=int,
+        help="size of the partition(file size is used when omited)",
+    )
+    parser.add_argument(
         dest="image", type=str, nargs=1, action="store", help="an FATX filesystem image"
     )
     args = parser.parse_args()
 
-    fs = FATX.Filesystem(args.image[0], args.sector_size)
+    fs = FATX.Filesystem(args.image[0], args.sector_size, args.offset, args.size)
     fs.status()
     root = fs.root
     listfiles(fs.root)
